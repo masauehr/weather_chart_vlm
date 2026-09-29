@@ -1,0 +1,18 @@
+# 環境・秘密情報
+.env
+*.pem
+*.key
+
+# 生データ・作業キャッシュ（毎回再取得可能）
+data/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# OS / エディタ
+.DS_Store
+*.swp
+.vscode/

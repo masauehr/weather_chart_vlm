@@ -1,0 +1,41 @@
+name: 天気図VLM解説 毎日更新
+
+on:
+  schedule:
+    # 21:13 UTC ≒ 06:13 JST（翌日）。GitHub Actionsは"毎時0分"ちょうどのスケジュールは
+    # 混雑で遅延・スキップされやすいと案内されているため、0分から少しずらしている。
+    - cron: "13 21 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 依存パッケージをインストール
+        run: pip install requests Pillow anthropic python-dotenv
+
+      - name: 今日の天気図を取得しVLMで判定
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python daily_update.py
+
+      - name: 変更をコミット・push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add webui/history
+          if git diff --cached --quiet; then
+            echo "変更なし（スキップ）"
+          else
+            git commit -m "デモ更新: $(date -u +%Y-%m-%d) の天気図VLM判定"
+            git push
+          fi

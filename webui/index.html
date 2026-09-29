@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>天気図VLM解説（デモ）</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>天気図、AIは読めるか</h1>
+  <p class="subtitle">天気図VLM解説（デモ） — <span id="chart-time"></span> 時点</p>
+  <div class="date-select-wrap">
+    <label for="date-select">日付:</label>
+    <select id="date-select"></select>
+  </div>
+</header>
+
+<main>
+  <section class="chart-panel">
+    <div class="image-tabs" id="image-tabs"></div>
+    <img id="chart-image" alt="天気図">
+  </section>
+
+  <section class="explain-panel">
+    <div class="badges">
+      <span class="badge pattern" id="pattern-badge"></span>
+      <span class="badge confidence" id="confidence-badge"></span>
+    </div>
+
+    <div class="reader-toggle" role="group" aria-label="読者切替">
+      <button id="btn-general" class="active">一般向け</button>
+      <button id="btn-kids">こども向け</button>
+    </div>
+
+    <h2>今日</h2>
+    <p id="today-text" class="explain-text"></p>
+
+    <h2>明日</h2>
+    <p id="tomorrow-text" class="explain-text"></p>
+
+    <h2>根拠</h2>
+    <ul id="evidence-list" class="explain-list"></ul>
+
+    <h2>要チェックポイント</h2>
+    <ul id="checkpoints-list" class="explain-list"></ul>
+
+    <p class="caveats" id="caveats-text"></p>
+  </section>
+</main>
+
+<section class="guardrail-panel">
+  <h2>🔍 このAIは信頼できるか — ガードレール検証</h2>
+  <p class="guardrail-intro">
+    数値は必ず実況・予報から引用し、ラベルは許可リストのみ、季節と矛盾する判定は自動で検出する。
+    「間違えることもある」を隠さず見せるのが、このデモの一番のポイント。
+  </p>
+  <table id="guardrail-table">
+    <thead><tr><th>判定</th><th>チェック項目</th><th>詳細</th></tr></thead>
+    <tbody></tbody>
+  </table>
+  <p class="accuracy-note" id="accuracy-note"></p>
+</section>
+
+<footer>
+  <p id="source-text"></p>
+</footer>
+
+<script src="script.js"></script>
+</body>
+</html>
