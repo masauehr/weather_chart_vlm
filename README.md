@@ -8,10 +8,10 @@
 **画像一覧と読み解き → [CHARTS.md](CHARTS.md)**（天気図2枚・赤外1枚を [images/](images/) に同梱し、要素ごとに解説）
 **発表スライド（Marp） → [SLIDES.md](SLIDES.md) / [SLIDES.pdf](SLIDES.pdf)**
 **デモUI → [webui/](webui/)**（実測データを使った静止デモ。読者切替・ガードレール検証パネルつき。`python -m http.server` で`webui/index.html`を開くだけで動く）
-**常時公開 → <https://masauehr.github.io/weather_chart_vlm/webui/index.html>**（GitHub Pages。毎朝6時過ぎJSTに自動更新、直近10日分の履歴を日付選択で切替可能）
+**常時公開 → <https://masauehr.github.io/weather_chart_vlm/webui/index.html>**（GitHub Pages。毎朝8:45 JST頃に自動更新、直近10日分の履歴を日付選択で切替可能）
 
 ## 毎日の自動更新（GitHub Actions）
-[.github/workflows/daily-update.yml](.github/workflows/daily-update.yml) が毎朝6:13 JST（21:13 UTC）に [daily_update.py](daily_update.py) を実行する。
+[.github/workflows/daily-update.yml](.github/workflows/daily-update.yml) が毎朝8:45 JST（23:45 UTC）に [daily_update.py](daily_update.py) を実行する。
 1. `fetch_chart.py` で今日の天気図・衛星・アメダス・予報を取得
 2. Claude API（Sonnet 5）で気圧配置を判定（一般向け・こども向けの解説を1回の呼び出しで取得）
 3. `validate.py` のガードレール検証
@@ -25,7 +25,7 @@ gh secret set ANTHROPIC_API_KEY --repo masauehr/weather_chart_vlm
 GitHub Actionsは**公開リポジトリでは無料**（標準ランナーに分数制限なし）。かかるのはClaude APIの呼び出し分のみ（1日あたり約$0.02〜0.04）。
 動作確認は Actions タブから `workflow_dispatch` で手動実行できる。
 
-> 補足: cronは毎時0分ちょうど（`0 21 * * *`）だとGitHub側の混雑で遅延・スキップされやすいため、`13 21 * * *`のように数分ずらしている（weather_hackathon_ideas での運用時に実際に発生した不具合の教訓）。
+> 補足: cronは毎時0分ちょうど（`0 21 * * *`）だとGitHub側の混雑で遅延・スキップされやすいため、`45 23 * * *`のように数分ずらしている（なお2026-10-01朝は6:13の定時実行が走らなかったため、8:45に変更）（weather_hackathon_ideas での運用時に実際に発生した不具合の教訓）。
 
 ## VLM とは
 **VLM（Vision-Language Model、視覚言語モデル）** は、画像とテキストの両方を入力に受け取り、テキストで答えるAIモデル。

@@ -21,7 +21,7 @@
 - 気象庁API・「日々の天気図」・Natural Earth の利用規約を遵守。図表・画像には出典を明記。
 
 ## 毎日の自動更新（GitHub Actions）
-- `.github/workflows/daily-update.yml` が毎朝6:13 JST（21:13 UTC。0分ちょうどは混雑で遅延・スキップされやすいためずらしている）に `daily_update.py` を実行。
+- `.github/workflows/daily-update.yml` が毎朝8:45 JST（23:45 UTC。0分ちょうどは混雑で遅延・スキップされやすいためずらしている）に `daily_update.py` を実行。
 - `ANTHROPIC_API_KEY` はリポジトリの Secrets（`.env` の内容は読まない・表示しない・コミットしない）。
 - 実行結果は `webui/history/<日付>/` に保存、10日より古い履歴は自動削除。GitHub Pages（root配信）で公開。
 - ワークフローやスケジュールを変更したら、README.md の該当節も更新する。
