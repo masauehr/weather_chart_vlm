@@ -1,8 +1,9 @@
-"""ID-32 検証: 気象庁の天気図・衛星赤外・アメダス実況・予報概況を取得する。
+"""ID-32 検証: 気象庁の天気図（実況・予想）・衛星赤外・アメダス実況・予報概況を取得する。
 
 出力（data/<基準時刻>/ 配下。git 除外）:
   surface_asia.png   アジア太平洋 地上天気図（ASAS）
   surface_near.png   日本近海 地上天気図（着色）
+  forecast_{near,asia}_{ft24,ft48}.png  予想天気図（24・48時間先）
   ir_japan.png       ひまわり赤外（B13）全球画像から日本周辺(z=4, 2x2タイル)を結合
   amedas.json        主要地点のアメダス実況（気温・風・降水）
   overview.json      府県予報の概況テキスト
@@ -45,6 +46,11 @@ def latest_chart(kind):
     """list.json の now 配列の末尾（最新）を返す。"""
     files = get(f"{BASE}/weather_map/data/list.json").json()[kind]["now"]
     return files[-1]
+
+
+def latest_forecast_chart(kind, ft):
+    """予想天気図（ft24/ft48）の最新ファイル名を返す。"""
+    return get(f"{BASE}/weather_map/data/list.json").json()[kind][ft][-1]
 
 
 def chart_valid_utc(name):
@@ -117,6 +123,16 @@ def fetch_all() -> Path:
     meta = {"asia": asia, "near": near}
     (out / "surface_asia.png").write_bytes(get(f"{BASE}/weather_map/data/png/{asia}").content)
     (out / "surface_near.png").write_bytes(get(f"{BASE}/weather_map/data/png/{near}").content)
+    # 予想天気図（24時間・48時間先）。解析時刻(token6)＋ft時間が予想の対象時刻
+    for area in ("near", "asia"):
+        for ft, hours in (("ft24", 24), ("ft48", 48)):
+            name = latest_forecast_chart(area, ft)
+            (out / f"forecast_{area}_{ft}.png").write_bytes(get(f"{BASE}/weather_map/data/png/{name}").content)
+            init = datetime.strptime(chart_valid_utc(name), "%Y%m%d%H%M%S")
+            valid_jst = init + timedelta(hours=hours + 9)
+            meta.setdefault("forecast", {})[f"{area}_{ft}"] = {
+                "file": name, "init_utc": chart_valid_utc(name), "valid_jst": valid_jst.strftime("%Y-%m-%d %H:%M"),
+            }
     meta["ir"] = fetch_ir(out / "ir_japan.png", base_utc)
     stamp, amedas = fetch_amedas(base_utc)
     meta["amedas_time"] = stamp

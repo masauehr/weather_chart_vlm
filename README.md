@@ -16,7 +16,7 @@
 `~/Library/LaunchAgents/com.user.weather_chart_vlm.plist` が毎朝8:45 JST（リトライ9:15）に [daily_update_local.sh](daily_update_local.sh) を実行し、[daily_update.py](daily_update.py) → commit → push まで行う（当日分が保存済みならスキップ）。Mac が起動中（またはスリープ復帰後）である必要がある。ログは `launchd.log`。
 
 > 2026-10-01 に GitHub Actions の定期実行（schedule）から移行。GitHub の schedule は新規リポジトリで遅延・欠落が多く、9/29は欠落・9/30は約3時間遅れ・10/1は6:13分が実行されなかったため。[.github/workflows/daily-update.yml](.github/workflows/daily-update.yml) は手動実行（`workflow_dispatch`）用に残している。
-1. `fetch_chart.py` で今日の天気図・衛星・アメダス・予報を取得
+1. `fetch_chart.py` で今日の天気図（実況＋予想24h/48h先）・衛星・アメダス・予報を取得
 2. Claude API（Sonnet 5）で気圧配置を判定（一般向け・こども向けの解説を1回の呼び出しで取得）
 3. `validate.py` のガードレール検証
 4. [webui/history/<日付>/](webui/history/) に画像＋data.jsonを保存、**10日より古い履歴は自動削除**

@@ -1,6 +1,6 @@
 # weather_chart_vlm（天気図VLM解説）運用マニュアル
 
-気象庁の天気図・ひまわり赤外・アメダス・府県予報概況をVLM（Claude Sonnet 5）に読ませ、気圧配置の判定と平文解説を毎日自動生成するプロジェクト。
+気象庁の天気図（実況・予想24h/48h先）・ひまわり赤外・アメダス・府県予報概況をVLM（Claude Sonnet 5）に読ませ、気圧配置の判定と平文解説を毎日自動生成するプロジェクト。
 公開: <https://masauehr.github.io/weather_chart_vlm/webui/index.html>（GitHub Pages、直近10日分の履歴を切替表示）
 
 ## 毎日の自動更新（Mac の launchd）

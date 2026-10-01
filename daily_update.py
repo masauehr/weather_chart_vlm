@@ -30,7 +30,8 @@ HISTORY_DIR = HERE / "webui" / "history"
 KEEP_DAYS = 10
 
 SYSTEM = """あなたは気象庁の地上天気図・衛星赤外画像を読む VLM（視覚言語モデル）役です。
-渡された画像（地上天気図2枚：アジア太平洋・日本近海／ひまわり赤外1枚、海岸線つき）と、
+渡された画像（実況の地上天気図2枚：アジア太平洋・日本近海／ひまわり赤外1枚、海岸線つき／
+予想天気図4枚：日本近海・アジア太平洋の24時間先・48時間先）と、
 同時刻のアメダス実況・府県予報概況（JSONテキスト）をもとに、気圧配置を判定してください。
 
 出力は次のスキーマに**厳密に一致する JSON のみ**を返すこと（説明文・コードフェンス・前置きは一切不要）。
@@ -50,7 +51,7 @@ SYSTEM = """あなたは気象庁の地上天気図・衛星赤外画像を読�
     "typhoon_affects_japan_now": true または false
   },
   "today": "実況・気圧配置から言える今日の天気の解説文（一般向け）",
-  "tomorrow": "気圧配置の推移から言える明日の見通し文（一般向け）",
+  "tomorrow": "実況と予想天気図（24時間先・48時間先）の気圧配置の推移から言える明日以降の見通し文（一般向け。予想天気図の対象時刻に触れる）",
   "check_points": ["予報が変わりうる不確実要素（一般向け）"],
   "caveats": "画像の読み取りに基づく推定である旨の断り書き",
   "kids": {
@@ -64,8 +65,16 @@ SYSTEM = """あなたは気象庁の地上天気図・衛星赤外画像を読�
 厳守事項:
 - pattern は許可リストの語のみ使う。
 - chart_values 以外の数値は、渡されたアメダス実況JSONか予報テキストに実在する値のみを today/tomorrow に書く。
+- 明日の見通しは予想天気図（気象庁の数値予報に基づく）の高低気圧・前線の位置の変化を根拠にする。
 - confidence は正直に見積もる。kids の内容は事実を変えず言葉だけ易しくする。
 """
+
+
+# 予想天気図（meta["forecast"] のキー, 表示名）
+FORECAST_LABELS = [
+    ("near_ft24", "日本近海・24時間先"), ("near_ft48", "日本近海・48時間先"),
+    ("asia_ft24", "アジア太平洋・24時間先"), ("asia_ft48", "アジア太平洋・48時間先"),
+]
 
 
 def classify(root: Path) -> dict:
@@ -78,6 +87,9 @@ def classify(root: Path) -> dict:
         ("地上天気図（日本近海・着色）", root / "surface_near.png"),
         ("ひまわり赤外(B13)・海岸線つき", root / "ir_japan.png"),
     ]
+    for key, label in FORECAST_LABELS:
+        vt = meta["forecast"][key]["valid_jst"]
+        images.append((f"予想天気図（{label}・{vt} JST 対象）", root / f"forecast_{key}.png"))
     content = []
     for label, path in images:
         content.append({"type": "text", "text": f"[{label}]"})
@@ -123,6 +135,14 @@ def build_entry(date_str: str, out: dict, checks: list[dict], root: Path, dest: 
     shutil.copy(root / "surface_near.png", img_dir / "near.png")
     shutil.copy(root / "surface_asia.png", img_dir / "asia.png")
     shutil.copy(root / "ir_japan.png", img_dir / "ir.png")
+    meta = json.loads((root / "meta.json").read_text())
+    forecast_images = []
+    for key, label in FORECAST_LABELS:
+        shutil.copy(root / f"forecast_{key}.png", img_dir / f"fc_{key}.png")
+        forecast_images.append({
+            "id": f"fc_{key}", "label": f"予想 {label}（{meta['forecast'][key]['valid_jst']}）",
+            "src": f"history/{date_str}/images/fc_{key}.png",
+        })
 
     data = {
         "date": date_str,
@@ -134,6 +154,7 @@ def build_entry(date_str: str, out: dict, checks: list[dict], root: Path, dest: 
             {"id": "near", "label": "地上天気図（日本近海）", "src": f"history/{date_str}/images/near.png"},
             {"id": "asia", "label": "地上天気図（アジア太平洋）", "src": f"history/{date_str}/images/asia.png"},
             {"id": "ir", "label": "ひまわり赤外(B13)", "src": f"history/{date_str}/images/ir.png"},
+            *forecast_images,
         ],
         "general": {
             "evidence": out["evidence"],
@@ -144,7 +165,7 @@ def build_entry(date_str: str, out: dict, checks: list[dict], root: Path, dest: 
         "kids": out.get("kids", {}),
         "caveats": out.get("caveats", ""),
         "guardrail_checks": checks,
-        "source": "出典: 気象庁ホームページ（天気図・衛星・アメダス・府県予報概況）",
+        "source": "出典: 気象庁ホームページ（実況・予想天気図・衛星・アメダス・府県予報概況）",
     }
     (dest / "data.json").write_text(json.dumps(data, ensure_ascii=False, indent=2))
 
