@@ -46,7 +46,10 @@ async function loadEntry(path) {
   document.getElementById("btn-general").classList.add("active");
   document.getElementById("btn-kids").classList.remove("active");
 
-  document.getElementById("chart-time").textContent = DATA.chart_time_jst;
+  // 更新時刻（updated_jst）があれば優先。無い旧データ・サンプルは天気図の対象時刻を表示
+  document.getElementById("chart-time").textContent = DATA.updated_jst
+    ? `${DATA.updated_jst} 更新`
+    : `${DATA.chart_time_jst} 時点`;
   document.getElementById("pattern-badge").textContent = DATA.pattern;
   setConfidenceBadge(DATA.confidence);
 

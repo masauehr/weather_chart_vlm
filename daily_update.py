@@ -147,6 +147,7 @@ def build_entry(date_str: str, out: dict, checks: list[dict], root: Path, dest: 
     data = {
         "date": date_str,
         "chart_time_jst": out["chart_time_jst"],
+        "updated_jst": (datetime.now(timezone.utc) + timedelta(hours=9)).strftime("%Y-%m-%d %H:%M"),
         "pattern": out["pattern"],
         "secondary_patterns": out.get("secondary_patterns", []),
         "confidence": out["confidence"],
