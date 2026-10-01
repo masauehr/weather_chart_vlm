@@ -10,24 +10,24 @@
 **画像一覧と読み解き → [CHARTS.md](CHARTS.md)**（天気図2枚・赤外1枚を [images/](images/) に同梱し、要素ごとに解説）
 **発表スライド（Marp） → [SLIDES.md](SLIDES.md) / [SLIDES.pdf](SLIDES.pdf)**
 **デモUI → [webui/](webui/)**（実測データを使った静止デモ。読者切替・ガードレール検証パネルつき。`python -m http.server` で`webui/index.html`を開くだけで動く）
-**常時公開 → <https://masauehr.github.io/weather_chart_vlm/webui/index.html>**（GitHub Pages。毎朝8:45 JST頃に自動更新、直近10日分の履歴を日付選択で切替可能）
+**常時公開 → <https://masauehr.github.io/weather_chart_vlm/webui/index.html>**（GitHub Pages。毎朝8:45 JSTにMacから自動更新、直近10日分の履歴を日付選択で切替可能）
 
-## 毎日の自動更新（GitHub Actions）
-[.github/workflows/daily-update.yml](.github/workflows/daily-update.yml) が毎朝8:45 JST（23:45 UTC）に [daily_update.py](daily_update.py) を実行する。
+## 毎日の自動更新（Mac の launchd）
+`~/Library/LaunchAgents/com.user.weather_chart_vlm.plist` が毎朝8:45 JST（リトライ9:15）に [daily_update_local.sh](daily_update_local.sh) を実行し、[daily_update.py](daily_update.py) → commit → push まで行う（当日分が保存済みならスキップ）。Mac が起動中（またはスリープ復帰後）である必要がある。ログは `launchd.log`。
+
+> 2026-10-01 に GitHub Actions の定期実行（schedule）から移行。GitHub の schedule は新規リポジトリで遅延・欠落が多く、9/29は欠落・9/30は約3時間遅れ・10/1は6:13分が実行されなかったため。[.github/workflows/daily-update.yml](.github/workflows/daily-update.yml) は手動実行（`workflow_dispatch`）用に残している。
 1. `fetch_chart.py` で今日の天気図・衛星・アメダス・予報を取得
 2. Claude API（Sonnet 5）で気圧配置を判定（一般向け・こども向けの解説を1回の呼び出しで取得）
 3. `validate.py` のガードレール検証
 4. [webui/history/<日付>/](webui/history/) に画像＋data.jsonを保存、**10日より古い履歴は自動削除**
-5. GitHub Actionsがpush → GitHub Pagesが自動再ビルド
+5. push → GitHub Pagesが自動再ビルド
 
-**セットアップに必要な作業（本人のみ）**: リポジトリの Secrets に `ANTHROPIC_API_KEY` を登録する必要がある（Claude Codeからは`.env`の内容を読めないため、以下はご自身で実行）。
+**GitHub Actions で手動実行する場合のみ**: リポジトリの Secrets に `ANTHROPIC_API_KEY` を登録する必要がある（Claude Codeからは`.env`の内容を読めないため、以下はご自身で実行）。
 ```bash
 gh secret set ANTHROPIC_API_KEY --repo masauehr/weather_chart_vlm
 ```
 GitHub Actionsは**公開リポジトリでは無料**（標準ランナーに分数制限なし）。かかるのはClaude APIの呼び出し分のみ（1日あたり約$0.02〜0.04）。
-動作確認は Actions タブから `workflow_dispatch` で手動実行できる。
-
-> 補足: cronは毎時0分ちょうど（`0 21 * * *`）だとGitHub側の混雑で遅延・スキップされやすいため、`45 23 * * *`のように数分ずらしている（なお2026-10-01朝は6:13の定時実行が走らなかったため、8:45に変更）（weather_hackathon_ideas での運用時に実際に発生した不具合の教訓）。
+Mac での手動実行は `bash daily_update_local.sh`、GitHub での手動実行は Actions タブの `workflow_dispatch`。
 
 ## VLM とは
 **VLM（Vision-Language Model、視覚言語モデル）** は、画像とテキストの両方を入力に受け取り、テキストで答えるAIモデル。
@@ -59,7 +59,7 @@ GitHub Actionsは**公開リポジトリでは無料**（標準ランナーに�
 | [validate.py](validate.py) | ①ラベル許可リスト ②季節整合 ③確信度 ④数値引用 ⑤実況突合 ⑥予報突合。`--selftest` で壊した出力の検出を確認 |
 | [fetch_hibiten.py](fetch_hibiten.py) | 気象庁「日々の天気図」（月次PDF、2002年8月〜）から指定日の天気図だけを機械的に切り出す。正解ラベル（見出し）付きの過去事例を作る |
 | [eval_historical.py](eval_historical.py) | 複数の過去事例（天気図のみ、実況・予報なし）でVLMに気圧配置を判定させ、見出しベースの正解ラベルと突き合わせて正答率を出す |
-| [daily_update.py](daily_update.py) | 上記を毎日1回通しで実行し、`webui/history/` に保存（GitHub Actionsから実行） |
+| [daily_update.py](daily_update.py) | 上記を毎日1回通しで実行し、`webui/history/` に保存（Mac の launchd から実行） |
 | [coastline_ea.json](coastline_ea.json) | 東アジア域の海岸線データ（Natural Earth 1:50m、パブリックドメイン） |
 | [CHARTS.md](CHARTS.md) / [images/](images/) | 使った画像（気象庁）と、その読み取り結果・実況予報との突合の解説 |
 | [webui/](webui/) | デモUI（Vanilla JS）。日付選択で自動更新履歴を切替表示 |

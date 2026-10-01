@@ -20,9 +20,10 @@
 - Web UI は Vanilla JS / HTML / CSS（フレームワーク不使用）。
 - 気象庁API・「日々の天気図」・Natural Earth の利用規約を遵守。図表・画像には出典を明記。
 
-## 毎日の自動更新（GitHub Actions）
-- `.github/workflows/daily-update.yml` が毎朝8:45 JST（23:45 UTC。0分ちょうどは混雑で遅延・スキップされやすいためずらしている）に `daily_update.py` を実行。
-- `ANTHROPIC_API_KEY` はリポジトリの Secrets（`.env` の内容は読まない・表示しない・コミットしない）。
+## 毎日の自動更新（Mac の launchd）
+- `~/Library/LaunchAgents/com.user.weather_chart_vlm.plist` が毎朝8:45 JST（リトライ9:15）に `daily_update_local.sh` を実行（`daily_update.py` → commit → push）。当日分が保存済みならスキップ。ログは `launchd.log`（git除外）。
+- GitHub Actions の `schedule` は遅延・欠落が多いため2026-10-01に廃止。`.github/workflows/daily-update.yml` は手動実行（`workflow_dispatch`）用に残している。
+- `ANTHROPIC_API_KEY` は `.env`（`.env` の内容は読まない・表示しない・コミットしない）。GitHub Secrets は手動実行時のみ使用。
 - 実行結果は `webui/history/<日付>/` に保存、10日より古い履歴は自動削除。GitHub Pages（root配信）で公開。
 - ワークフローやスケジュールを変更したら、README.md の該当節も更新する。
 

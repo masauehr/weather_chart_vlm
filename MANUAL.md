@@ -3,17 +3,25 @@
 気象庁の天気図・ひまわり赤外・アメダス・府県予報概況をVLM（Claude Sonnet 5）に読ませ、気圧配置の判定と平文解説を毎日自動生成するプロジェクト。
 公開: <https://masauehr.github.io/weather_chart_vlm/webui/index.html>（GitHub Pages、直近10日分の履歴を切替表示）
 
-## 毎日の自動更新（GitHub Actions）
-- ワークフロー: `.github/workflows/daily-update.yml` → `daily_update.py` を実行し `webui/history/<日付>/` に保存。10日より古い履歴は自動削除。
-- 実行時刻: **毎朝 8:45 JST（23:45 UTC）**。2026-10-01 に 6:13 JST から変更。
-- コスト: Claude API 約 $0.02〜0.04/日。`ANTHROPIC_API_KEY` はリポジトリ Secrets。
-- 手動実行: `gh workflow run daily-update.yml`（`workflow_dispatch`）。
+## 毎日の自動更新（Mac の launchd）
+- 設定: `~/Library/LaunchAgents/com.user.weather_chart_vlm.plist`（Label: `com.user.weather_chart_vlm`）
+- 実行時刻: **毎朝 8:45 JST、リトライ 9:15 JST**（Mac のローカル時刻）。
+- 処理: `daily_update_local.sh` → `git pull --rebase` → `daily_update.py`（取得・VLM判定・ガードレール検証・`webui/history/<日付>/` 保存、10日超は削除）→ commit → push → GitHub Pages 自動再ビルド。
+- 当日（JST）分が `webui/history/<日付>/data.json` にあればスキップ（リトライ・手動再実行の重複防止）。
+- コスト: Claude API 約 $0.02〜0.04/日。`ANTHROPIC_API_KEY` は `.env`。
+- ログ: `launchd.log`（git除外）。
+- 手動実行: `bash daily_update_local.sh`。
+- 注意: Mac がスリープ中／電源オフだと実行されない（スリープ復帰後に launchd が実行する場合あり）。
+- 再登録: `launchctl bootout gui/$(id -u)/com.user.weather_chart_vlm` → `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.user.weather_chart_vlm.plist`
+
+## GitHub Actions（手動実行用に残置）
+- `.github/workflows/daily-update.yml` は `workflow_dispatch` のみ。`gh workflow run daily-update.yml` で実行（Secrets の `ANTHROPIC_API_KEY` が必要）。
 
 ## 変更履歴
-- 2026-10-01: 6:13 JST の定時実行が走らなかったため 8:45 JST に変更。あわせて 2026-10-01 9:05 JST（`5 0 1 10 *`）の臨時実行を1回追加（確認後に削除可）。
+- 2026-10-01: GitHub Actions の定期実行を廃止し、Mac の launchd（8:45 JST）へ移行。
+  - 理由: GitHub の `schedule` が新規リポジトリで遅延・欠落（9/29 欠落、9/30 約3時間遅れ、10/1 の 6:13 分は未実行、臨時 9:05 も未実行）。
+  - 時刻設定（UTC換算）の誤りではなく GitHub 側の仕様（高負荷時の遅延・取りこぼし、新規リポジトリの低優先度）が原因。
 
 ## トラブルシュート
-- **スケジュールが走らない／遅れる**: GitHub Actions の `schedule` は混雑で数分〜数時間遅延、または欠落することがある（9/29 朝は欠落、9/30 は約3時間遅れで 09:22 JST に実行）。
-  - 確認: `gh run list --workflow daily-update.yml`
-  - 対処: `gh workflow run daily-update.yml` で手動実行。毎時0分ちょうどは避ける。
-- 当日分の更新が無い場合は `webui/history/index.json` に当日の日付があるかを確認。
+- 更新されない: `launchd.log` を確認 → `launchctl list | grep weather_chart_vlm` → `bash daily_update_local.sh` で手動実行。
+- push 失敗: git の認証状態、`git pull --rebase` の競合を確認。
