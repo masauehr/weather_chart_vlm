@@ -18,6 +18,7 @@
 - `.github/workflows/daily-update.yml` は `workflow_dispatch` のみ。`gh workflow run daily-update.yml` で実行（Secrets の `ANTHROPIC_API_KEY` が必要）。
 
 ## 変更履歴
+- 2026-10-10: 解説ページの見出し「明日」を「明日から明後日」に変更（解説が明後日までの見通しを含むため。データのキー名 `tomorrow` は変更なし）。
 - 2026-10-10: ページ冒頭に「AIが天気図・衛星画像を自動収集して解説を自動生成する試みであり、誤りを含む場合がある」旨の注記を追加（webui/index.html・style.css）。Bluesky 自動投稿（OpenClaw cron `bsky-weather-am`）のリンク先として公開されるため。
 - 2026-10-01: GitHub Actions の定期実行を廃止し、Mac の launchd（8:45 JST）へ移行。
   - 理由: GitHub の `schedule` が新規リポジトリで遅延・欠落（9/29 欠落、9/30 約3時間遅れ、10/1 の 6:13 分は未実行、臨時 9:05 も未実行）。
