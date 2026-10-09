@@ -26,6 +26,7 @@ header {
   padding: 20px 24px;
 }
 header h1 { margin: 0 0 6px; font-size: 24px; }
+header .ai-note { margin: 8px 0 0; font-size: 12px; line-height: 1.6; opacity: 0.9; }
 header .subtitle { margin: 0; opacity: 0.85; font-size: 14px; }
 .date-select-wrap { margin-top: 10px; font-size: 13px; }
 .date-select-wrap label { margin-right: 6px; opacity: 0.85; }
