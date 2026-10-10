@@ -88,7 +88,7 @@ def main():
     content.append({
         "type": "text",
         "text": (
-            f"アメダス実況（主要8地点）:\n{amedas}\n\n"
+            f"アメダス実況（主要8地点＋全国の地域別集計）:\n{amedas}\n\n"
             f"府県予報概況:\n{overview}\n\n"
             f"取得メタ情報（対象時刻など）:\n{json.dumps(meta, ensure_ascii=False)}\n\n"
             "上記画像と実況・予報から、指定スキーマの JSON を出力してください。"

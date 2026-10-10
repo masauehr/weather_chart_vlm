@@ -104,6 +104,14 @@ function renderExplain() {
     evList.appendChild(li);
   });
 
+  // 気圧の谷の判読結果（等圧線の凹み × 衛星の雲域 × アメダス降水）を根拠欄の末尾に追記
+  const cloudLabel = { yes: "雲域と一致", partial: "雲域と一部一致", no: "雲域と不一致" };
+  (DATA.troughs || []).forEach((t) => {
+    const li = document.createElement("li");
+    li.textContent = `気圧の谷: ${t.location}（${cloudLabel[t.cloud_match] || t.cloud_match}／降水あり: ${t.rain_stations}）`;
+    evList.appendChild(li);
+  });
+
   const cpList = document.getElementById("checkpoints-list");
   cpList.innerHTML = "";
   (content.check_points || []).forEach((c) => {

@@ -30,9 +30,9 @@ HISTORY_DIR = HERE / "webui" / "history"
 KEEP_DAYS = 10
 
 SYSTEM = """あなたは気象庁の地上天気図・衛星赤外画像を読む VLM（視覚言語モデル）役です。
-渡された画像（実況の地上天気図2枚：アジア太平洋・日本近海／ひまわり赤外1枚、海岸線つき／
+渡された画像（実況の地上天気図2枚：アジア太平洋・日本近海／ひまわり赤外2枚：広域と九州〜南西諸島の拡大（海岸線・緯経度格子つき）／
 予想天気図4枚：日本近海・アジア太平洋の24時間先・48時間先）と、
-同時刻のアメダス実況・府県予報概況（JSONテキスト）をもとに、気圧配置を判定してください。
+同時刻のアメダス実況（主要8地点＋全国約1300地点の地域別集計）・府県予報概況（JSONテキスト）をもとに、気圧配置を判定してください。
 
 出力は次のスキーマに**厳密に一致する JSON のみ**を返すこと（説明文・コードフェンス・前置きは一切不要）。
 "today"/"tomorrow"/"evidence"/"check_points" は一般向け、"kids" 以下はそれを小学生にも分かる言葉で言い換えたもの。
@@ -43,10 +43,11 @@ SYSTEM = """あなたは気象庁の地上天気図・衛星赤外画像を読�
   "secondary_patterns": ["主パターン以外に見える要素があれば自由記述で列挙（無ければ空配列）"],
   "confidence": 0.0から1.0の数値,
   "evidence": ["天気図・衛星画像から読み取れる根拠を箇条書きで"],
+  "troughs": [{"location": "気圧の谷の位置（例: 九州南部〜奄美付近）", "isobar_dent": "等圧線の凹みの様子", "cloud_match": "yes | partial | no（衛星の雲域との一致）", "rain_stations": "その付近のアメダス降水あり地点数（地域別集計から）"}],
   "chart_values": {"対象（例: 高気圧(日本海)）": "示度(hPa)"},
   "claims": {
-    "precip_now": "none | some | heavy のいずれか（アメダス実況の降水量から判断。画像から推定しない）",
-    "wind_now": "weak | moderate | strong のいずれか（アメダス実況の風速から判断）",
+    "precip_now": "none | some | heavy のいずれか（アメダス全国集計の最大1時間降水量から判断。画像から推定しない）",
+    "wind_now": "weak | moderate | strong のいずれか（アメダス全国集計の最大風速から判断: 12m/s未満=weak, 12〜20=moderate, 20以上=strong）",
     "front_near_japan_now": true または false,
     "typhoon_affects_japan_now": true または false
   },
@@ -61,6 +62,14 @@ SYSTEM = """あなたは気象庁の地上天気図・衛星赤外画像を読�
     "check_points": ["check_points を小学生にも分かる言葉で言い換え"]
   }
 }
+
+気圧の谷・雨域の読み取り手順（必ず行う）:
+1. 地上天気図の等圧線が低圧側へ凹んでいる所（高気圧の縁でも、低気圧・前線が無くても）を探し、"troughs" に列挙する。無ければ空配列。
+2. 凹みの位置を、緯経度格子つきの拡大赤外画像（特に九州〜南西諸島）と見比べ、雲域（白く明るい塊）が重なるか確認する。
+3. アメダスの「地域別」集計で、その付近の「降水あり地点数」「最大1時間降水量」を確認する。降水あり地点が複数ある地域は、
+   雨域がある事実として today に地域名つきで書く（例: 鹿児島〜奄美付近の気圧の谷に伴う雨雲）。
+4. 谷と雲域の片方しか確認できない場合は断定せず cloud_match を partial にし、断定を避ける表現にする。
+5. 全国の大半が晴れでも、局地的な雨域を省略しない。「全国的に晴れ」と書くのは降水あり地点数が全国で数地点以下の場合に限る。
 
 厳守事項:
 - pattern は許可リストの語のみ使う。
@@ -85,7 +94,8 @@ def classify(root: Path) -> dict:
     images = [
         ("地上天気図（アジア太平洋）", root / "surface_asia.png"),
         ("地上天気図（日本近海・着色）", root / "surface_near.png"),
-        ("ひまわり赤外(B13)・海岸線つき", root / "ir_japan.png"),
+        ("ひまわり赤外(B13)・海岸線つき（広域）", root / "ir_japan.png"),
+        ("ひまわり赤外(B13)・九州〜南西諸島の拡大（海岸線・緯経度格子つき）", root / "ir_nansei.png"),
     ]
     for key, label in FORECAST_LABELS:
         vt = meta["forecast"][key]["valid_jst"]
@@ -97,7 +107,7 @@ def classify(root: Path) -> dict:
     content.append({
         "type": "text",
         "text": (
-            f"アメダス実況（主要8地点）:\n{amedas}\n\n"
+            f"アメダス実況（主要8地点＋全国の地域別集計）:\n{amedas}\n\n"
             f"府県予報概況:\n{overview}\n\n"
             f"取得メタ情報:\n{json.dumps(meta, ensure_ascii=False)}\n\n"
             "上記画像と実況・予報から、指定スキーマの JSON を出力してください。"
@@ -135,6 +145,7 @@ def build_entry(date_str: str, out: dict, checks: list[dict], root: Path, dest: 
     shutil.copy(root / "surface_near.png", img_dir / "near.png")
     shutil.copy(root / "surface_asia.png", img_dir / "asia.png")
     shutil.copy(root / "ir_japan.png", img_dir / "ir.png")
+    shutil.copy(root / "ir_nansei.png", img_dir / "ir_nansei.png")
     meta = json.loads((root / "meta.json").read_text())
     forecast_images = []
     for key, label in FORECAST_LABELS:
@@ -155,6 +166,7 @@ def build_entry(date_str: str, out: dict, checks: list[dict], root: Path, dest: 
             {"id": "near", "label": "地上天気図（日本近海）", "src": f"history/{date_str}/images/near.png"},
             {"id": "asia", "label": "地上天気図（アジア太平洋）", "src": f"history/{date_str}/images/asia.png"},
             {"id": "ir", "label": "ひまわり赤外(B13)", "src": f"history/{date_str}/images/ir.png"},
+            {"id": "ir_nansei", "label": "ひまわり赤外 九州〜南西諸島（拡大）", "src": f"history/{date_str}/images/ir_nansei.png"},
             *forecast_images,
         ],
         "general": {
@@ -163,6 +175,7 @@ def build_entry(date_str: str, out: dict, checks: list[dict], root: Path, dest: 
             "tomorrow": out["tomorrow"],
             "check_points": out["check_points"],
         },
+        "troughs": out.get("troughs", []),
         "kids": out.get("kids", {}),
         "caveats": out.get("caveats", ""),
         "guardrail_checks": checks,

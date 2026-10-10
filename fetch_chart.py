@@ -5,7 +5,8 @@
   surface_near.png   日本近海 地上天気図（着色）
   forecast_{near,asia}_{ft24,ft48}.png  予想天気図（24・48時間先）
   ir_japan.png       ひまわり赤外（B13）全球画像から日本周辺(z=4, 2x2タイル)を結合
-  amedas.json        主要地点のアメダス実況（気温・風・降水）
+  ir_nansei.png      九州〜南西諸島の拡大赤外（z=5, 経緯度格子つき）
+  amedas.json        主要8地点＋全国アメダスの地域別集計（降水あり地点数・最大降水/風速）
   overview.json      府県予報の概況テキスト
   meta.json          取得元URLと時刻
 出典: 気象庁ホームページ
@@ -78,6 +79,53 @@ def draw_coastline(canvas, z, x0, y0, tile_px=256):
             draw.line(pts, fill=(255, 255, 0), width=1)
 
 
+def draw_grid(canvas, z, x0, y0, tile_px=256, step=5, scale=1):
+    """緯度経度の格子線（step度刻み）とラベルを描く。天気図の経緯線と見比べるための補助線。"""
+    draw = ImageDraw.Draw(canvas)
+    w, h = canvas.size
+    # 画像範囲の経緯度を逆算して、範囲内の step 度刻みの線だけを引く
+    lon_min = (x0 / 2 ** z) * 360 - 180
+    lon_max = ((x0 + w / scale / tile_px) / 2 ** z) * 360 - 180
+    for lon in range(math.ceil(lon_min / step) * step, int(lon_max) + 1, step):
+        px = (lonlat_to_tile(lon, 30, z)[0] - x0) * tile_px * scale
+        draw.line([(px, 0), (px, h)], fill=(0, 200, 255), width=1)
+        draw.text((px + 2, 2), f"{lon}E", fill=(0, 255, 255))
+    for lat in range(20, 46, step):
+        py = (lonlat_to_tile(130, lat, z)[1] - y0) * tile_px * scale
+        if 0 <= py <= h:
+            draw.line([(0, py), (w, py)], fill=(0, 200, 255), width=1)
+            draw.text((2, py + 2), f"{lat}N", fill=(0, 255, 255))
+
+
+def fetch_ir_zoom(out, target_utc, z=5, x0=27, y0=12, nx=2, ny=2, scale=2):
+    """九州〜南西諸島を含む拡大赤外画像（z=5 の 2x2 タイル ≒ 東経124〜146度・北緯22〜41度）。
+
+    z=4 の広域画像（約11px/度）では南西諸島の小さな雲域が潰れるため、約23px/度で別途作る。
+    scale 倍に拡大して海岸線・緯経度の格子線を重ねる（VLM が雲域と気圧の谷を位置で照合できるように）。
+    """
+    times = get(f"{BASE}/himawari/data/satimg/targetTimes_fd.json").json()
+    t = min(times, key=lambda x: abs(int(x["validtime"]) - int(target_utc)))
+    base, valid = t["basetime"], t["validtime"]
+    canvas = Image.new("RGB", (256 * nx, 256 * ny))
+    for yi in range(ny):
+        for xi in range(nx):
+            url = f"{BASE}/himawari/data/satimg/{base}/fd/{valid}/B13/TBB/{z}/{x0 + xi}/{y0 + yi}.jpg"
+            canvas.paste(Image.open(io.BytesIO(get(url).content)).convert("RGB"), (xi * 256, yi * 256))
+    canvas = canvas.resize((canvas.width * scale, canvas.height * scale), Image.LANCZOS)
+    # 海岸線は拡大後の座標系で描く（tile_px を scale 倍して流用）
+    draw = ImageDraw.Draw(canvas)
+    for line in COASTLINE["lines"]:
+        pts = []
+        for lon, lat in line:
+            xt, yt = lonlat_to_tile(lon, lat, z)
+            pts.append(((xt - x0) * 256 * scale, (yt - y0) * 256 * scale))
+        if len(pts) >= 2:
+            draw.line(pts, fill=(255, 255, 0), width=1)
+    draw_grid(canvas, z, x0, y0, scale=scale)
+    canvas.save(out)
+    return {"basetime": base, "validtime": valid}
+
+
 def fetch_ir(out, target_utc):
     """ひまわり赤外 B13 を全球(fd)の z=4 2x2 タイル(x=13,14 / y=5,6 ≒ 東経112〜157度・北緯22〜55度)で結合する。
 
@@ -98,8 +146,62 @@ def fetch_ir(out, target_utc):
     return {"basetime": base, "validtime": valid}
 
 
+# 地域区分（観測所番号の上2桁 = 府県・地方ブロック番号）。島しょ部は緯度で補正する
+BLOCK_REGIONS = [
+    (range(11, 25), "北海道"), (range(31, 37), "東北"), (range(40, 47), "関東"), (range(48, 50), "甲信"),
+    (range(50, 54), "東海"), (range(54, 58), "北陸"), (range(60, 66), "近畿"), (range(66, 70), "中国"),
+    ((81,), "中国"), (range(71, 75), "四国"), (range(82, 87), "九州北部"), ((87,), "九州南部"),
+]
+
+
+def region_of(code, lat):
+    """アメダス地点コードと緯度から地域名を返す。"""
+    b = int(code[:2])
+    if b == 44 and lat < 34:
+        return "伊豆・小笠原"
+    if b >= 91:
+        return "沖縄"          # 91=沖縄本島・先島、93=大東島
+    if b == 88:
+        return "鹿児島(本土・大隅)" if lat >= 30 else "奄美・トカラ"
+    for rng, name in BLOCK_REGIONS:
+        if b in rng:
+            return name
+    return "その他"
+
+
+def summarize_amedas(m):
+    """全国マップ(約1300地点)を地域ごとに集計する。VLMには生データでなく集計と上位地点だけ渡す。
+
+    降水は precipitation1h（1時間降水量）が 0 超の地点を「降水あり」とする。
+    """
+    table = get(f"{BASE}/amedas/const/amedastable.json").json()
+    regions, stations = {}, []
+    for code, rec in m.items():
+        info = table.get(code)
+        if not info:
+            continue
+        lat = info["lat"][0] + info["lat"][1] / 60
+        name = info["kjName"]
+        prec = rec["precipitation1h"][0] if rec.get("precipitation1h") else None
+        wind = rec["wind"][0] if rec.get("wind") else None
+        r = regions.setdefault(region_of(code, lat), {"地点数": 0, "降水あり地点数": 0, "最大1時間降水量": None, "最大風速": None})
+        r["地点数"] += 1
+        if prec is not None:
+            if prec > 0:
+                r["降水あり地点数"] += 1
+            if r["最大1時間降水量"] is None or prec > r["最大1時間降水量"]["mm"]:
+                r["最大1時間降水量"] = {"mm": prec, "地点": name}
+            stations.append((prec, name, region_of(code, lat)))
+        if wind is not None and (r["最大風速"] is None or wind > r["最大風速"]["m/s"]):
+            r["最大風速"] = {"m/s": wind, "地点": name}
+    top = [{"地点": n, "地域": g, "1時間降水量mm": p} for p, n, g in sorted(stations, reverse=True)[:10] if p > 0]
+    return {"全国": {"地点数": sum(r["地点数"] for r in regions.values()),
+                     "降水あり地点数": sum(r["降水あり地点数"] for r in regions.values())},
+            "地域別": regions, "降水上位": top}
+
+
 def fetch_amedas(target_utc):
-    """天気図の対象時刻(UTC→JST)のアメダス全国マップから主要地点を抜き出す。"""
+    """天気図の対象時刻(UTC→JST)のアメダス全国マップから、主要地点と全国の地域別集計を作る。"""
     jst = datetime.strptime(target_utc, "%Y%m%d%H%M%S") + timedelta(hours=9)
     stamp = jst.strftime("%Y%m%d%H%M%S")
     m = get(f"{BASE}/amedas/data/map/{stamp}.json").json()
@@ -109,7 +211,8 @@ def fetch_amedas(target_utc):
         rec = m.get(code, {})
         # 値は [値, 品質フラグ] の形式
         out[name] = {k: rec[k][0] for k in keys if k in rec and rec[k]}
-    return stamp, out
+    # 構造: 主要地点（従来の8地点）＋ 全国の地域別集計
+    return stamp, {"主要地点": out, **summarize_amedas(m)}
 
 
 def fetch_all() -> Path:
@@ -134,6 +237,7 @@ def fetch_all() -> Path:
                 "file": name, "init_utc": chart_valid_utc(name), "valid_jst": valid_jst.strftime("%Y-%m-%d %H:%M"),
             }
     meta["ir"] = fetch_ir(out / "ir_japan.png", base_utc)
+    meta["ir_zoom"] = fetch_ir_zoom(out / "ir_nansei.png", base_utc)
     stamp, amedas = fetch_amedas(base_utc)
     meta["amedas_time"] = stamp
     (out / "amedas.json").write_text(json.dumps(amedas, ensure_ascii=False, indent=2))

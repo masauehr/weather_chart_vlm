@@ -23,6 +23,18 @@ SEASON = {
     "秋雨前線": {9, 10, 11},
     "太平洋高気圧": {6, 7, 8, 9},
 }
+# 地域名 → 解説文中でその地域を指しうる語（雨域の言及漏れ検査用）
+REGION_KEYWORDS = {
+    "鹿児島(本土・大隅)": ["鹿児島", "九州南部", "南九州", "九州", "屋久島", "種子島", "大隅", "薩南", "南西諸島"],
+    "九州南部": ["宮崎", "九州南部", "南九州", "九州", "鹿児島"],
+    "九州北部": ["福岡", "長崎", "佐賀", "熊本", "大分", "九州北部", "九州"],
+    "奄美・トカラ": ["奄美", "トカラ", "南西諸島", "鹿児島"],
+    "沖縄": ["沖縄", "先島", "南西諸島"],
+    "伊豆・小笠原": ["伊豆", "小笠原", "八丈", "伊豆諸島"],
+    "北海道": ["北海道"], "東北": ["東北"], "関東": ["関東", "東京"], "甲信": ["甲信", "長野", "山梨"],
+    "東海": ["東海", "静岡", "愛知"], "北陸": ["北陸", "新潟", "石川", "富山", "福井"],
+    "近畿": ["近畿", "大阪", "関西"], "中国": ["中国", "山口", "広島"], "四国": ["四国"],
+}
 # 予報テキストと突き合わせるキーワード（VLM 出力側の表現 → 予報側の表現）
 CONCEPTS = ["高気圧", "低気圧", "前線", "台風", "気圧の谷"]
 
@@ -35,7 +47,10 @@ def numbers_in(text):
 def check(out, root):
     """検証結果を [(判定, 項目, 詳細)] で返す。判定は OK / NG / 注意。"""
     res = []
-    amedas = json.loads((root / "amedas.json").read_text())
+    amedas_all = json.loads((root / "amedas.json").read_text())
+    # 新形式は {"主要地点": {...}, "全国": ..., "地域別": ...}。旧形式（8地点のみ）も読めるようにする
+    amedas = amedas_all.get("主要地点", amedas_all)
+    regions = amedas_all.get("地域別", {})
     overview = json.loads((root / "overview.json").read_text())
     official = "".join(v.get("text", "") for v in overview.values() if isinstance(v, dict))
 
@@ -54,6 +69,11 @@ def check(out, root):
 
     # 3) 数値引用: 解説文の数値は実況JSONか予報テキストに存在しなければならない
     known = {str(v) for st in amedas.values() for v in st.values()}
+    # 地域別集計・降水上位の数値（降水量・風速・地点数）も引用してよい出典に含める
+    nums = re.findall(r"\d+(?:\.\d+)?", json.dumps(amedas_all, ensure_ascii=False))
+    known |= set(nums)
+    # 「約20mm」のような四捨五入・切り捨ての引用も許す（20.5 → 20 / 21）
+    known |= {str(int(float(x))) for x in nums} | {str(round(float(x))) for x in nums}
     for key in ("today", "tomorrow"):
         for num, unit in numbers_in(out[key]):
             ok = num in known or num in official or float(num).is_integer() and str(int(float(num))) in known
@@ -61,15 +81,31 @@ def check(out, root):
 
     # 4) 実況突合（claims を機械的に検証）
     cl = out.get("claims", {})
-    prec = max(st.get("precipitation1h", 0) for st in amedas.values())
-    wind = max(st.get("wind", 0) for st in amedas.values())
+    # 新形式は全国約1300地点の最大、旧形式は主要8地点の最大
+    if regions:
+        prec = max((r["最大1時間降水量"]["mm"] for r in regions.values() if r["最大1時間降水量"]), default=0)
+        wind = max((r["最大風速"]["m/s"] for r in regions.values() if r["最大風速"]), default=0)
+        scope = "全国アメダス"
+    else:
+        prec = max(st.get("precipitation1h", 0) for st in amedas.values())
+        wind = max(st.get("wind", 0) for st in amedas.values())
+        scope = "主要8地点"
     if "precip_now" in cl:
         ok = (cl["precip_now"] == "none") == (prec == 0)
-        res.append(("OK" if ok else "NG", "実況突合:降水", f"claim={cl['precip_now']} / 主要8地点の1時間降水量最大={prec}mm"))
+        res.append(("OK" if ok else "NG", "実況突合:降水", f"claim={cl['precip_now']} / {scope}の1時間降水量最大={prec}mm"))
     if "wind_now" in cl:
-        # 「弱い」は最大風速 8m/s 未満とみなす（簡易基準）
-        ok = (cl["wind_now"] == "weak") == (wind < 8)
-        res.append(("OK" if ok else "NG", "実況突合:風", f"claim={cl['wind_now']} / 主要8地点の風速最大={wind}m/s"))
+        # 「弱い」は最大風速が主要8地点で 8m/s 未満、全国約1300地点では離島・山岳を含むため 12m/s 未満とみなす（簡易基準）
+        ok = (cl["wind_now"] == "weak") == (wind < (12 if regions else 8))
+        res.append(("OK" if ok else "NG", "実況突合:風", f"claim={cl['wind_now']} / {scope}の風速最大={wind}m/s"))
+
+    # 4b) 雨域の言及漏れ: 降水あり地点が3地点以上の地域を解説文が一切挙げていなければ「注意」
+    text_today = out["today"] + out["tomorrow"] + "".join(out.get("evidence", []))
+    for name, r in regions.items():
+        if r["降水あり地点数"] >= 3 and r["最大1時間降水量"]["mm"] >= 1:
+            kws = REGION_KEYWORDS.get(name, [name])
+            ok = any(k in text_today for k in kws)
+            res.append(("OK" if ok else "注意", f"雨域の言及:{name}",
+                        f"降水あり{r['降水あり地点数']}地点・最大{r['最大1時間降水量']['mm']}mm({r['最大1時間降水量']['地点']}) / 解説文={'言及あり' if ok else '言及なし → 雨域の省略の疑い'}"))
 
     # 5) 予報突合: VLM 出力中の概念が公式概況にも現れるか
     vlm_text = out["today"] + out["tomorrow"] + "".join(out["evidence"])
