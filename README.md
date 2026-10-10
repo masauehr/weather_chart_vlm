@@ -74,8 +74,8 @@ Mac での手動実行は `bash daily_update_local.sh`、GitHub での手動実�
 | データ | URL 系統（`https://www.jma.go.jp/bosai/`） | 粒度・遅延 |
 |---|---|---|
 | 地上天気図 | `weather_map/data/list.json` → `weather_map/data/png/<ファイル名>` | 日本近海 3時間毎(実測は約2時間遅れで掲載)、アジア 6時間毎。PNG 約600px |
-| ひまわり赤外 | `himawari/data/satimg/targetTimes_fd.json` → `.../{base}/fd/{valid}/B13/TBB/{z}/{x}/{y}.jpg` | 10分毎、遅延は数分。`jp` 域は斜めに欠けた範囲で太平洋側が空白になるため `fd` の z=4 タイルを使う |
-| アメダス | `amedas/data/map/{YYYYMMDDHHMMSS(JST)}.json` | 10分毎。値は [値, 品質] 形式 |
+| ひまわり赤外 | `himawari/data/satimg/targetTimes_fd.json` → `.../{base}/fd/{valid}/B13/TBB/{z}/{x}/{y}.jpg` | 10分毎、遅延は数分。`jp` 域は斜めに欠けた範囲で太平洋側が空白になるため `fd` の z=4 タイルを使う。九州〜南西諸島は z=5 の拡大画像（`ir_nansei.png`）も作る |
+| アメダス | `amedas/data/map/{YYYYMMDDHHMMSS(JST)}.json` | 10分毎。値は [値, 品質] 形式。全国約1300地点を `amedas/const/amedastable.json`（地点名・緯経度）と突き合わせて地域別に集計する |
 | 府県予報概況 | `forecast/data/overview_forecast/{office}.json` | 日3回程度 |
 | 日々の天気図（過去、月次PDF） | `https://www.data.jma.go.jp/yoho/data/hibiten/{年}/{年下2桁}{月2桁}.pdf` | 2002年8月〜。1ページ4x4グリッド、各セルに天気図＋気象庁予報官が書いた見出し・解説。標準版PDF |
 入手性は認証不要。ライセンスは気象庁HP利用規約に従う（出典明記）。「日々の天気図」は個人の研究用途で利用（商用・大量再配布はしない）。衛星画像の海岸線は Natural Earth 1:50m coastline（パブリックドメイン、naturalearthdata.com）。
