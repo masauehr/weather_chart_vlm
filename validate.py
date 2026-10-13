@@ -96,10 +96,11 @@ def check(out, root):
         ok = cl["precip_now"] == want
         res.append(("OK" if ok else "NG", "実況突合:降水", f"claim={cl['precip_now']} / {scope}の1時間降水量最大={prec}mm（基準では {want}）"))
     if "wind_now" in cl:
-        # 風速はすべて平均風速（10分間平均）。最大瞬間風速では判定しない（気象庁の風の強さの表は平均風速）
-        # 「弱い」は最大風速が主要8地点で 8m/s 未満、全国約1300地点では離島・山岳を含むため 12m/s 未満とみなす（簡易基準）。20m/s以上=strong
-        weak_max = 12 if regions else 8
-        want = "weak" if wind < weak_max else ("strong" if wind >= 20 else "moderate")
+        # 風速はすべて平均風速（10分間平均）。最大瞬間風速では判定しない。
+        # 区切りは気象庁「風の強さと吹き方」の表に合わせる: 10m/s未満=weak（予報用語なし）、10以上20未満=moderate
+        # （やや強い風10〜15・強い風15〜20）、20以上=strong（非常に強い風20〜30・猛烈な風30〜）。
+        # 全国最大は離島・山岳を含むため、weak になる日は少ない（風の判定は地域別で見るほうが意味が強い）
+        want = "weak" if wind < 10 else ("strong" if wind >= 20 else "moderate")
         ok = cl["wind_now"] == want
         res.append(("OK" if ok else "NG", "実況突合:風", f"claim={cl['wind_now']} / {scope}の風速最大={wind}m/s（基準では {want}）"))
 
