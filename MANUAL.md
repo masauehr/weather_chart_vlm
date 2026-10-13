@@ -45,6 +45,8 @@
 - `.github/workflows/daily-update.yml` は `workflow_dispatch` のみ。`gh workflow run daily-update.yml` で実行（Secrets の `ANTHROPIC_API_KEY` が必要）。
 
 ## 変更履歴
+- 2026-10-13: 風のルールを追加。風の強弱は**平均風速（10分間平均）**で判断・記述し、最大瞬間風速では分類しない（瞬間風速に触れるときは明記）。気象庁の「風の強さと吹き方」「雨の強さと降り方」の表の区分を CLAUDE.md に記載（プロンプト `daily_update.py`・`vlm_read.py`、`validate.py` のコメントにも反映）。`wind_now` の境界（12m/s）を気象庁の区切り（10/15/20/30）に合わせるかは未決。
+- 2026-10-13: ガードレール「実況突合」の claims 基準を明文化して一致させた。`precip_now` は 0mm=none／0mm超〜30mm未満=some／30mm以上=heavy（全国最大1時間降水量）、`wind_now` は 12m/s未満=weak／12〜20=moderate／20以上=strong。プロンプト（`daily_update.py`・`vlm_read.py`）に基準を追記し、`validate.py` は基準どおりに判定する。背景: 10/13 に VLM が最大 4.5mm なのに claim=none と答えて「実況突合:降水」NG となり、下流（Bluesky 自動投稿）が解説ごと捨てた。NG の扱いは下流側でも「致命的／軽い」に分けた（automated-data-collector の BLUESKY.md）。
 - 2026-10-13: 台風の海域名の誤り（日本の東にある台風29号を「東シナ海南方」とし、沖縄の雨を台風の影響と説明）を修正。
   - 原因: VLMが天気図の図柄だけから台風の位置・海域を推測していた。気象庁の海域名（<https://www.jma.go.jp/jma/kishou/know/yougo_hp/asia.html>）に沿った指示も無かった。
   - 台風情報: `fetch_chart.py` の `fetch_typhoon()` が bosai の台風データ（`typhoon/data/targetTc.json`・`specifications.json`）から番号・実況位置・海域名・予報位置を取得し `typhoon.json` に保存、プロンプトに渡す（位置・海域名は公式情報を正とする）。

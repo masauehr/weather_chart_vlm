@@ -91,12 +91,17 @@ def check(out, root):
         wind = max(st.get("wind", 0) for st in amedas.values())
         scope = "主要8地点"
     if "precip_now" in cl:
-        ok = (cl["precip_now"] == "none") == (prec == 0)
-        res.append(("OK" if ok else "NG", "実況突合:降水", f"claim={cl['precip_now']} / {scope}の1時間降水量最大={prec}mm"))
+        # 判定基準はプロンプトと同じ: 0mm=none / 0mm超〜30mm未満=some / 30mm以上=heavy（2026-10-13 に基準を明文化）
+        want = "none" if prec == 0 else ("heavy" if prec >= 30 else "some")
+        ok = cl["precip_now"] == want
+        res.append(("OK" if ok else "NG", "実況突合:降水", f"claim={cl['precip_now']} / {scope}の1時間降水量最大={prec}mm（基準では {want}）"))
     if "wind_now" in cl:
-        # 「弱い」は最大風速が主要8地点で 8m/s 未満、全国約1300地点では離島・山岳を含むため 12m/s 未満とみなす（簡易基準）
-        ok = (cl["wind_now"] == "weak") == (wind < (12 if regions else 8))
-        res.append(("OK" if ok else "NG", "実況突合:風", f"claim={cl['wind_now']} / {scope}の風速最大={wind}m/s"))
+        # 風速はすべて平均風速（10分間平均）。最大瞬間風速では判定しない（気象庁の風の強さの表は平均風速）
+        # 「弱い」は最大風速が主要8地点で 8m/s 未満、全国約1300地点では離島・山岳を含むため 12m/s 未満とみなす（簡易基準）。20m/s以上=strong
+        weak_max = 12 if regions else 8
+        want = "weak" if wind < weak_max else ("strong" if wind >= 20 else "moderate")
+        ok = cl["wind_now"] == want
+        res.append(("OK" if ok else "NG", "実況突合:風", f"claim={cl['wind_now']} / {scope}の風速最大={wind}m/s（基準では {want}）"))
 
     # 4b) 雨域の言及漏れ: 降水あり地点が3地点以上の地域を解説文が一切挙げていなければ「注意」
     text_today = out["today"] + out["tomorrow"] + "".join(out.get("evidence", []))

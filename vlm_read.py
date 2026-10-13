@@ -40,8 +40,8 @@ SCHEMA_INSTRUCTION = """あなたは気象庁の地上天気図・衛星赤外�
   "evidence": ["天気図・衛星画像から読み取れる根拠を箇条書きで（等圧線の形・間隔、前線位置、雲の帯状構造など）"],
   "chart_values": {"対象（例: 高気圧(日本海)）": "示度(hPa) を天気図上の数字からそのまま書き写す"},
   "claims": {
-    "precip_now": "none | some | heavy のいずれか（渡されたアメダス実況の降水量から判断。画像から推定しない）",
-    "wind_now": "weak | moderate | strong のいずれか（アメダス実況の風速から判断）",
+    "precip_now": "none | some | heavy のいずれか（渡されたアメダス実況の最大1時間降水量から機械的に判断: 0mm=none, 0mm超〜30mm未満=some, 30mm以上=heavy。1地点でも降水があれば none にしない。画像から推定しない）",
+    "wind_now": "weak | moderate | strong のいずれか（アメダス実況の風速＝平均風速（10分間平均）から判断。瞬間風速では判断しない）",
     "front_near_japan_now": true または false,
     "typhoon_affects_japan_now": true または false
   },
