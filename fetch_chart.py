@@ -215,6 +215,35 @@ def fetch_amedas(target_utc):
     return stamp, {"主要地点": out, **summarize_amedas(m)}
 
 
+def fetch_typhoon() -> list[dict]:
+    """気象庁bosaiの台風情報から、実況の位置・海域名・予報位置を取り出す（台風が無ければ空リスト）。
+
+    VLMは天気図から台風の海域を誤読しやすいため、公式の位置・海域名（例: 日本の東）を渡して根拠にさせる。
+    """
+    base = f"{BASE}/typhoon/data"
+    result = []
+    for tc in get(f"{base}/targetTc.json").json():
+        spec = get(f"{base}/{tc['tropicalCyclone']}/specifications.json").json()
+        item = {"番号": tc["typhoonNumber"][2:].lstrip("0"), "発表": tc["issue"]}
+        for part in spec:
+            if part.get("part") == "title":
+                item["名称"] = part["name"]["jp"]
+            elif isinstance(part.get("part"), dict) and part["part"].get("jp") == "実況":
+                item["実況"] = {
+                    "海域名": part.get("location"), "緯度経度": part["position"]["deg"],
+                    "進行": f"{part.get('course')} 時速{part['speed']['km/h']}km",
+                    "中心気圧hPa": part.get("pressure"), "最大風速m/s": part["maximumWind"]["sustained"]["m/s"],
+                    "強風域": part.get("galeWarning"),
+                }
+            elif isinstance(part.get("part"), dict) and part["part"].get("jp", "").startswith("予報"):
+                item.setdefault("予報", []).append({
+                    "時間後": part.get("advancedHours"), "緯度経度": part["position"]["deg"],
+                    "海域名": part.get("location"),
+                })
+        result.append(item)
+    return result
+
+
 def fetch_all() -> Path:
     """天気図・衛星・アメダス・予報概況を一式取得し、保存先ディレクトリを返す。daily_update.py 等から再利用する。"""
     DATA.mkdir(exist_ok=True)
@@ -248,6 +277,11 @@ def fetch_all() -> Path:
         except Exception as e:  # noqa: BLE001 取得失敗は記録して続行
             overview[name] = {"error": str(e)}
     (out / "overview.json").write_text(json.dumps(overview, ensure_ascii=False, indent=2))
+    try:
+        typhoon = fetch_typhoon()
+    except Exception as e:  # noqa: BLE001 取得失敗は記録して続行（台風情報なし扱いにしない）
+        typhoon = {"error": str(e)}
+    (out / "typhoon.json").write_text(json.dumps(typhoon, ensure_ascii=False, indent=2))
     (out / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2))
     return out
 
