@@ -35,7 +35,7 @@ REGION_KEYWORDS = {
     "東海": ["東海", "静岡", "愛知"], "北陸": ["北陸", "新潟", "石川", "富山", "福井"],
     "近畿": ["近畿", "大阪", "関西"], "中国": ["中国", "山口", "広島"], "四国": ["四国"],
 }
-# 前線通過域（fronts[].reach_ft48 など）の地方名 → 解説文中でその地方を指しうる語
+# 前線通過域（fronts_ft24 / fronts_ft48 の regions）の地方名 → 解説文中でその地方を指しうる語
 REACH_KEYWORDS = {
     "北海道": ["北海道"],
     "東北": ["東北", "秋田", "山形", "青森", "岩手", "宮城", "福島"],
@@ -186,10 +186,10 @@ def check(out, root):
 
     # 6) 前線通過域の突合: 予想図で前線が陸地にかかる地方を、解説文が落としていないか／公式概況に天気の崩れがあるか
     tomorrow_text = out["tomorrow"] + "".join(out.get("check_points", []))
-    for key, label in (("reach_ft24", "24時間先"), ("reach_ft48", "48時間先")):
+    for key, label in (("fronts_ft24", "24時間先"), ("fronts_ft48", "48時間先")):
         reach = []
-        for f in out.get("fronts", []):
-            for r in f.get(key, []):
+        for f in out.get(key, []):
+            for r in f.get("regions", []):
                 if r in REACH_KEYWORDS and r not in reach:
                     reach.append(r)
         for r in reach:
