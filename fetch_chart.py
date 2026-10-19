@@ -33,8 +33,20 @@ STATIONS = {
     "札幌": "14163", "新潟": "54232", "金沢": "56227", "東京": "44132",
     "名古屋": "51106", "大阪": "62078", "福岡": "82182", "那覇": "91197",
 }
-# 予報概況を取る府県予報区
-OFFICES = {"東京都": "130000", "新潟県": "150000", "石川県": "170000", "北海道(石狩)": "016000"}
+# 予報概況を取る府県予報区を、広域の地方区分ごとにまとめる（解説は「本州の日本海側を中心に」のように
+# 地方単位で書かせるため。overview.json は {地方区分: {府県予報区名: 概況JSON}} の形で保存する）
+OFFICE_GROUPS = {
+    "北海道": {"北海道(石狩)": "016000"},
+    "東北": {"秋田県": "050000", "山形県": "060000"},  # 日本海側
+    "北陸": {"新潟県": "150000", "石川県": "170000"},
+    "関東": {"東京都": "130000"},
+    "東海": {"愛知県": "230000"},
+    "近畿": {"大阪府": "270000"},
+    "山陰": {"鳥取県": "310000", "島根県": "320000"},
+    "九州北部": {"福岡県": "400000"},
+    "九州南部": {"宮崎県": "450000", "鹿児島県": "460100"},
+    "沖縄": {"沖縄本島地方": "471000"},
+}
 
 
 def get(url, **kw):
@@ -271,11 +283,13 @@ def fetch_all() -> Path:
     meta["amedas_time"] = stamp
     (out / "amedas.json").write_text(json.dumps(amedas, ensure_ascii=False, indent=2))
     overview = {}
-    for name, code in OFFICES.items():
-        try:
-            overview[name] = get(f"{BASE}/forecast/data/overview_forecast/{code}.json").json()
-        except Exception as e:  # noqa: BLE001 取得失敗は記録して続行
-            overview[name] = {"error": str(e)}
+    for group, offices in OFFICE_GROUPS.items():
+        overview[group] = {}
+        for name, code in offices.items():
+            try:
+                overview[group][name] = get(f"{BASE}/forecast/data/overview_forecast/{code}.json").json()
+            except Exception as e:  # noqa: BLE001 取得失敗は記録して続行
+                overview[group][name] = {"error": str(e)}
     (out / "overview.json").write_text(json.dumps(overview, ensure_ascii=False, indent=2))
     try:
         typhoon = fetch_typhoon()

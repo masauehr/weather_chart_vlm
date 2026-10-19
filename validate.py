@@ -35,8 +35,62 @@ REGION_KEYWORDS = {
     "東海": ["東海", "静岡", "愛知"], "北陸": ["北陸", "新潟", "石川", "富山", "福井"],
     "近畿": ["近畿", "大阪", "関西"], "中国": ["中国", "山口", "広島"], "四国": ["四国"],
 }
+# 前線通過域（fronts[].reach_ft48 など）の地方名 → 解説文中でその地方を指しうる語
+REACH_KEYWORDS = {
+    "北海道": ["北海道"],
+    "東北": ["東北", "秋田", "山形", "青森", "岩手", "宮城", "福島"],
+    "北陸": ["北陸", "新潟", "石川", "富山", "福井"],
+    "関東甲信": ["関東", "東京", "甲信", "長野", "山梨"],
+    "東海": ["東海", "静岡", "愛知", "岐阜", "三重"],
+    "近畿": ["近畿", "関西", "大阪", "京都", "兵庫"],
+    "山陰": ["山陰", "鳥取", "島根"],
+    "山陽": ["山陽", "中国地方", "岡山", "広島", "山口"],
+    "四国": ["四国"],
+    "九州北部": ["九州北部", "北九州", "福岡", "佐賀", "長崎", "九州"],
+    "九州南部": ["九州南部", "南九州", "鹿児島", "宮崎", "九州"],
+    "沖縄": ["沖縄", "南西諸島", "先島"],
+}
+# 「本州の日本海側」「西日本」など、まとめた表記が含む地方（まとめた表記で書かれていれば言及ありとみなす）
+BROAD_PHRASES = {
+    "全国": set(REACH_KEYWORDS),
+    "北日本": {"北海道", "東北"},
+    "東日本": {"関東甲信", "北陸", "東海", "東北"},
+    "西日本": {"近畿", "山陰", "山陽", "四国", "九州北部", "九州南部"},
+    "本州の日本海側": {"東北", "北陸", "山陰", "近畿"},
+    "日本海側": {"北海道", "東北", "北陸", "山陰", "九州北部", "近畿"},
+    "本州": {"東北", "関東甲信", "北陸", "東海", "近畿", "山陰", "山陽"},
+}
+# 前線通過域の地方名 → 府県予報概況を取っている地方区分（fetch_chart.OFFICE_GROUPS のキー）。無い地方は概況突合しない
+REACH_TO_GROUP = {
+    "北海道": "北海道", "東北": "東北", "北陸": "北陸", "関東甲信": "関東",
+    "東海": "東海", "近畿": "近畿", "山陰": "山陰", "九州北部": "九州北部",
+    "九州南部": "九州南部", "沖縄": "沖縄",
+}
+# 概況に天気の崩れが書かれているかを見る語
+WEATHER_BREAK_WORDS = ["雨", "雪", "雷", "荒れ", "崩れ", "あられ", "ひょう", "強風"]
 # 予報テキストと突き合わせるキーワード（VLM 出力側の表現 → 予報側の表現）
 CONCEPTS = ["高気圧", "低気圧", "前線", "台風", "気圧の谷"]
+
+
+def overview_by_group(overview):
+    """overview.json から {地方区分: 概況本文} を作る。新形式 {地方区分: {府県: JSON}} と
+    旧形式 {府県: JSON} の両方を読める（旧形式は府県名をそのまま区分名にする）。"""
+    out = {}
+    for name, v in overview.items():
+        if not isinstance(v, dict):
+            continue
+        if "text" in v or "error" in v:
+            out[name] = v.get("text", "")
+        else:
+            out[name] = "".join(x.get("text", "") for x in v.values() if isinstance(x, dict))
+    return out
+
+
+def mentioned(region, text):
+    """解説文が地方 region に言及しているか。地名のほか「本州の日本海側」「西日本」などのまとめた表記も認める。"""
+    if any(k in text for k in REACH_KEYWORDS[region]):
+        return True
+    return any(p in text and region in members for p, members in BROAD_PHRASES.items())
 
 
 def numbers_in(text):
@@ -52,7 +106,10 @@ def check(out, root):
     amedas = amedas_all.get("主要地点", amedas_all)
     regions = amedas_all.get("地域別", {})
     overview = json.loads((root / "overview.json").read_text())
-    official = "".join(v.get("text", "") for v in overview.values() if isinstance(v, dict))
+    group_text = overview_by_group(overview)
+    official = "".join(group_text.values())
+    typhoon_path = root / "typhoon.json"
+    typhoon = json.loads(typhoon_path.read_text()) if typhoon_path.exists() else None
 
     # 1) ラベル許可リスト
     base = out["pattern"].split("（")[0]
@@ -119,7 +176,31 @@ def check(out, root):
         v, o = w in vlm_text, w in official
         if v or o:
             verdict = "OK" if v == o else "注意"
-            res.append((verdict, f"予報突合:{w}", f"VLM={'言及' if v else '言及なし'} / 公式概況={'言及' if o else '言及なし'}"))
+            detail = f"VLM={'言及' if v else '言及なし'} / 公式概況={'言及' if o else '言及なし'}"
+            # 台風は府県概況（今日・明日の地方予報）に出ないことが多い。気象庁の公式台風情報に台風が実在し、
+            # VLMがそれを書いているなら誤りではないので注意にしない（概況に言及が無いだけの誤検知を避ける）
+            if w == "台風" and v and not o and isinstance(typhoon, list) and typhoon:
+                verdict = "OK"
+                detail += f" / 公式台風情報に台風{len(typhoon)}個あり（概況に無くても妥当）"
+            res.append((verdict, f"予報突合:{w}", detail))
+
+    # 6) 前線通過域の突合: 予想図で前線が陸地にかかる地方を、解説文が落としていないか／公式概況に天気の崩れがあるか
+    tomorrow_text = out["tomorrow"] + "".join(out.get("check_points", []))
+    for key, label in (("reach_ft24", "24時間先"), ("reach_ft48", "48時間先")):
+        reach = []
+        for f in out.get("fronts", []):
+            for r in f.get(key, []):
+                if r in REACH_KEYWORDS and r not in reach:
+                    reach.append(r)
+        for r in reach:
+            ok = mentioned(r, tomorrow_text)
+            res.append(("OK" if ok else "注意", f"前線通過域の言及[{label}]:{r}",
+                        f"{label}の予想図で前線が{r}にかかる / 解説文={'言及あり' if ok else '言及なし → 前線通過域の省略の疑い'}"))
+            grp = REACH_TO_GROUP.get(r)
+            if grp and grp in group_text:
+                broken = [w for w in WEATHER_BREAK_WORDS if w in group_text[grp]]
+                res.append(("OK" if broken else "注意", f"前線通過域と概況[{label}]:{r}",
+                            f"前線が{r}にかかる / 公式概況（{grp}）に天気の崩れの記載={'あり（' + '・'.join(broken[:3]) + '）' if broken else 'なし → 前線の影響を過大に書いていないか確認'}"))
     return res
 
 

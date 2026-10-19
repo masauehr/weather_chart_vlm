@@ -54,9 +54,9 @@ Mac での手動実行は `bash daily_update_local.sh`、GitHub での手動実�
 ## 構成
 | ファイル | 役割 |
 |---|---|
-| [fetch_chart.py](fetch_chart.py) | 地上天気図（アジア/日本近海）・ひまわり赤外(B13、Natural Earth海岸線オーバーレイつき)・アメダス（主要8地点＋全国約1300地点の地域別集計）・九州〜南西諸島の拡大赤外・府県予報概況を取得 |
+| [fetch_chart.py](fetch_chart.py) | 地上天気図（アジア/日本近海）・ひまわり赤外(B13、Natural Earth海岸線オーバーレイつき)・アメダス（主要8地点＋全国約1300地点の地域別集計）・九州〜南西諸島の拡大赤外・府県予報概況（地方区分10にまとめて取得）を取得 |
 | [vlm_read.py](vlm_read.py) | Claude API（Sonnet 5）へ画像＋実況・予報を渡し、構造化出力を得る。`.env` の `ANTHROPIC_API_KEY` を使用 |
-| [validate.py](validate.py) | ①ラベル許可リスト ②季節整合 ③確信度 ④数値引用 ⑤実況突合 ⑥予報突合。`--selftest` で壊した出力の検出を確認。⑤の `claims` 基準は 降水: 0mm=none／0超〜30未満=some／30以上=heavy、風（平均風速）: 10m/s未満=weak／10以上20未満=moderate／20以上=strong（気象庁の風の強さの表に合わせた。2026-10-13 に明文化・区切りを修正。風は平均風速で判断するルールは [CLAUDE.md](CLAUDE.md)） |
+| [validate.py](validate.py) | ①ラベル許可リスト ②季節整合 ③確信度 ④数値引用 ⑤実況突合 ⑥予報突合（台風は公式台風情報があれば概況に無くてもOK）⑦前線通過域の突合（予想図で前線がかかる地方を解説が落としていないか・概況に天気の崩れがあるか）。`--selftest` で壊した出力の検出を確認。⑤の `claims` 基準は 降水: 0mm=none／0超〜30未満=some／30以上=heavy、風（平均風速）: 10m/s未満=weak／10以上20未満=moderate／20以上=strong（気象庁の風の強さの表に合わせた。2026-10-13 に明文化・区切りを修正。風は平均風速で判断するルールは [CLAUDE.md](CLAUDE.md)） |
 | [fetch_hibiten.py](fetch_hibiten.py) | 気象庁「日々の天気図」（月次PDF、2002年8月〜）から指定日の天気図だけを機械的に切り出す。正解ラベル（見出し）付きの過去事例を作る |
 | [eval_historical.py](eval_historical.py) | 複数の過去事例（天気図のみ、実況・予報なし）でVLMに気圧配置を判定させ、見出しベースの正解ラベルと突き合わせて正答率を出す |
 | [daily_update.py](daily_update.py) | 上記を毎日1回通しで実行し、`webui/history/` に保存（Mac の launchd から実行） |
