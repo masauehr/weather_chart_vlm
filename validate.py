@@ -72,6 +72,71 @@ WEATHER_BREAK_WORDS = ["雨", "雪", "雷", "荒れ", "崩れ", "あられ", "�
 CONCEPTS = ["高気圧", "低気圧", "前線", "台風", "気圧の谷"]
 
 
+def precip_label(mm):
+    """1時間降水量(mm) → 気象庁「雨の強さと降り方」の用語。10mm未満は予報用語の対象外。"""
+    if mm == 0:
+        return "降水なし"
+    for lo, name in ((80, "猛烈な雨"), (50, "非常に激しい雨"), (30, "激しい雨"), (20, "強い雨"), (10, "やや強い雨")):
+        if mm >= lo:
+            return name
+    return "10mm未満"
+
+
+def wind_label(ms):
+    """平均風速(m/s) → 気象庁「風の強さと吹き方」の用語。10m/s未満は予報用語の対象外。"""
+    for lo, name in ((30, "猛烈な風"), (20, "非常に強い風"), (15, "強い風"), (10, "やや強い風")):
+        if ms >= lo:
+            return name
+    return "10m/s未満"
+
+
+# 旧ラベル（〜2026-10-18）への丸め（過去の data.json・vlm_output の検証用）
+LEGACY_PRECIP = {"降水なし": "none", "10mm未満": "some", "やや強い雨": "some", "強い雨": "some",
+                 "激しい雨": "heavy", "非常に激しい雨": "heavy", "猛烈な雨": "heavy",
+                 "none": "none", "some": "some", "heavy": "heavy"}
+LEGACY_WIND = {"10m/s未満": "weak", "やや強い風": "moderate", "強い風": "moderate",
+               "非常に強い風": "strong", "猛烈な風": "strong"}
+
+
+def observed_extremes(amedas_all):
+    """アメダス実況から (最大1時間降水量mm, 最大平均風速m/s, 範囲名) を返す。
+    新形式は全国約1300地点の最大、旧形式は主要8地点の最大。"""
+    amedas = amedas_all.get("主要地点", amedas_all)
+    regions = amedas_all.get("地域別", {})
+    if regions:
+        prec = max((r["最大1時間降水量"]["mm"] for r in regions.values() if r["最大1時間降水量"]), default=0)
+        wind = max((r["最大風速"]["m/s"] for r in regions.values() if r["最大風速"]), default=0)
+        return prec, wind, "全国アメダス"
+    prec = max(st.get("precipitation1h", 0) for st in amedas.values())
+    wind = max(st.get("wind", 0) for st in amedas.values())
+    return prec, wind, "主要8地点"
+
+
+def fill_claims(out, root):
+    """claims の precip_now / wind_now をアメダス実況から機械的に決めて入れる（気象庁の用語）。
+    細かい用語の選択を VLM に任せると取り違える（26mmを「やや強い雨」等）ため、VLM には答えさせない。"""
+    amedas_all = json.loads((root / "amedas.json").read_text())
+    prec, wind, _ = observed_extremes(amedas_all)
+    out.setdefault("claims", {}).update({"precip_now": precip_label(prec), "wind_now": wind_label(wind)})
+
+
+# 気象庁用語の強さの順（today の用語が観測を超えていないかの検査用）。長い語を先に照合する
+PRECIP_TERMS = ["非常に激しい雨", "猛烈な雨", "激しい雨", "やや強い雨", "強い雨"]
+WIND_TERMS = ["非常に強い風", "猛烈な風", "やや強い風", "強い風"]
+PRECIP_RANK = {"降水なし": 0, "10mm未満": 1, "やや強い雨": 2, "強い雨": 3, "激しい雨": 4, "非常に激しい雨": 5, "猛烈な雨": 6}
+WIND_RANK = {"10m/s未満": 0, "やや強い風": 1, "強い風": 2, "非常に強い風": 3, "猛烈な風": 4}
+
+
+def strongest_term(text, terms, rank):
+    """text 中の気象庁用語のうち最も強いもの。無ければ None。"""
+    found, rest = [], text
+    for t in terms:  # 長い語から消し、「非常に激しい雨」中の「激しい雨」を二重に数えない
+        if t in rest:
+            found.append(t)
+            rest = rest.replace(t, "")
+    return max(found, key=lambda t: rank[t]) if found else None
+
+
 def overview_by_group(overview):
     """overview.json から {地方区分: 概況本文} を作る。新形式 {地方区分: {府県: JSON}} と
     旧形式 {府県: JSON} の両方を読める（旧形式は府県名をそのまま区分名にする）。"""
@@ -138,29 +203,35 @@ def check(out, root):
 
     # 4) 実況突合（claims を機械的に検証）
     cl = out.get("claims", {})
-    # 新形式は全国約1300地点の最大、旧形式は主要8地点の最大
-    if regions:
-        prec = max((r["最大1時間降水量"]["mm"] for r in regions.values() if r["最大1時間降水量"]), default=0)
-        wind = max((r["最大風速"]["m/s"] for r in regions.values() if r["最大風速"]), default=0)
-        scope = "全国アメダス"
-    else:
-        prec = max(st.get("precipitation1h", 0) for st in amedas.values())
-        wind = max(st.get("wind", 0) for st in amedas.values())
-        scope = "主要8地点"
+    prec, wind, scope = observed_extremes(amedas_all)
+    # 内部ラベルは気象庁の用語そのまま（2026-10-19）。区切りは気象庁の表に従う。
+    # 気象庁に予報用語が無い区分（雨10mm未満・風10m/s未満）は用語を作らず「10mm未満」「10m/s未満」とする。
+    # 旧ラベル（none/some/heavy・weak/moderate/strong）で保存された過去の出力は旧区分に丸めて突き合わせる。
     if "precip_now" in cl:
-        # 判定基準はプロンプトと同じ: 0mm=none / 0mm超〜30mm未満=some / 30mm以上=heavy（2026-10-13 に基準を明文化）
-        want = "none" if prec == 0 else ("heavy" if prec >= 30 else "some")
-        ok = cl["precip_now"] == want
-        res.append(("OK" if ok else "NG", "実況突合:降水", f"claim={cl['precip_now']} / {scope}の1時間降水量最大={prec}mm（基準では {want}）"))
+        want = precip_label(prec)
+        claim = cl["precip_now"]
+        if claim in ("none", "some", "heavy"):
+            want = LEGACY_PRECIP[want]
+        ok = claim == want
+        res.append(("OK" if ok else "NG", "実況突合:降水", f"claim={claim} / {scope}の1時間降水量最大={prec}mm（基準では {want}）"))
     if "wind_now" in cl:
         # 風速はすべて平均風速（10分間平均）。最大瞬間風速では判定しない。
-        # 区切りは気象庁「風の強さと吹き方」の表に合わせる: 10m/s未満=weak（予報用語なし）、10以上20未満=moderate
-        # （やや強い風10〜15・強い風15〜20）、20以上=strong（非常に強い風20〜30・猛烈な風30〜）。
-        # 全国最大は離島・山岳を含むため、weak になる日は少ない（風の判定は地域別で見るほうが意味が強い）
-        want = "weak" if wind < 10 else ("strong" if wind >= 20 else "moderate")
-        ok = cl["wind_now"] == want
-        res.append(("OK" if ok else "NG", "実況突合:風", f"claim={cl['wind_now']} / {scope}の風速最大={wind}m/s（基準では {want}）"))
+        # 全国最大は離島・山岳を含むため、「10m/s未満」になる日は少ない（風の判定は地域別で見るほうが意味が強い）
+        want = wind_label(wind)
+        claim = cl["wind_now"]
+        if claim in ("weak", "moderate", "strong"):
+            want = LEGACY_WIND[want]
+        ok = claim == want
+        res.append(("OK" if ok else "NG", "実況突合:風", f"claim={claim} / {scope}の風速最大={wind}m/s（基準では {want}）"))
 
+    # 4a) today の気象庁用語が観測（全国最大）を超えていないか。tomorrow は予報なので対象外
+    for label, terms, rank, obs in (("降水", PRECIP_TERMS, PRECIP_RANK, precip_label(prec)),
+                                    ("風", WIND_TERMS, WIND_RANK, wind_label(wind))):
+        t = strongest_term(out["today"], terms, rank)
+        if t:
+            ok = rank[t] <= rank[obs]
+            res.append(("OK" if ok else "注意", f"実況の用語:{label}",
+                        f"today の「{t}」/ {scope}の観測={obs}" + ("" if ok else " → 観測より強い表現（誇張の疑い）")))
     # 4b) 雨域の言及漏れ: 降水あり地点が3地点以上の地域を解説文が一切挙げていなければ「注意」
     text_today = out["today"] + out["tomorrow"] + "".join(out.get("evidence", []))
     for name, r in regions.items():
@@ -218,7 +289,7 @@ def selftest(root):
     bad_cases = {
         "誤ラベル(冬型)": {"pattern": "冬型（西高東低）"},
         "数値の捏造(気温35℃)": {"today": "東京は気温35℃まで上がり猛暑になる。"},
-        "実況と矛盾(雨/強風)": {"claims": {"precip_now": "heavy", "wind_now": "strong"}},
+        "実況と矛盾(雨/強風)": {"claims": {"precip_now": "猛烈な雨", "wind_now": "猛烈な風"}},
     }
     detected = 0
     for name, patch in bad_cases.items():
