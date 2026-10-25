@@ -90,7 +90,7 @@
 
 ## トラブルシュート
 - 更新されない: `launchd.log` を確認 → `launchctl list | grep weather_chart_vlm` → `bash daily_update_local.sh` で手動実行。
-- push 失敗: git の認証状態、`git pull --rebase` の競合を確認。
+- push 失敗: 2026-10-25 に push が約31時間ハングして日次更新が止まったため、`daily_update_local.sh` は低速30秒で中断・最大3回再試行し、最終失敗時は macOS 通知を出す。git の認証状態、`git pull --rebase` の競合を確認。
 
 ## 運用上の注意・トラブルシュート（雨域まわり）
 - 「雨があるのに全国的に晴れ」と書かれた: 当日の `data/<基準時刻>/amedas.json` の `地域別` で降水あり地点数を確認 → `webui/history/<日付>/data.json` の `guardrail_checks`（「雨域の言及」が注意になっていないか）を確認。
