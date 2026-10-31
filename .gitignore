@@ -17,3 +17,6 @@ venv/
 *.swp
 .vscode/
 launchd.log
+
+# Slack 通知の重複防止フラグ
+.slack_notified

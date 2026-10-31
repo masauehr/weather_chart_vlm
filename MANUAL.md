@@ -51,6 +51,7 @@
 - `.github/workflows/daily-update.yml` は `workflow_dispatch` のみ。`gh workflow run daily-update.yml` で実行（Secrets の `ANTHROPIC_API_KEY` が必要）。
 
 ## 変更履歴
+- 2026-10-31（Slack通知）: Anthropic API のクレジット残高不足（10/27〜10/31 に日次更新が停止した原因）を Slack に通知。`daily_update.py` の `classify()` が 400「credit balance is too low」で失敗したとき、Slack DM（Bluesky自動投稿と同じ `openclaw message send`・宛先 `~/.config/bsky/slack_to`）へ投稿してからエラー終了する。同日2回の実行（8:45・9:15）で通知は1回（`.slack_notified` に日付を記録・git除外）。宛先未設定または送信失敗でも通知なしで従来どおり動く。他のエラー（通信切断など）は通知対象外（`daily_update_local.sh` の macOS 通知のみ）。
 - 2026-10-19（内部ラベル）: `claims.precip_now`・`wind_now` の内部ラベルを気象庁の用語に変更（独自の weak/moderate/strong・none/some/heavy を廃止）。風は気象庁の表の区切り（10／15／20／30m/s）、雨は10／20／30／50／80mmで、予報用語の無い区分は「10m/s未満」「10mm未満」「降水なし」とした。旧ラベルは雨の10mm未満〜30mm未満をひとまとめにしていた（気象庁の表と不一致）。
   - 値は VLM に答えさせず `validate.fill_claims()` がアメダス全国最大から決める（`effort=low` で細かい用語を選ばせると、26mmを「やや強い雨」、14.7m/sを「10m/s未満」と取り違えて NG になったため。下流の Bluesky 投稿は NG を重く扱う）。
   - 代わりに「実況の用語」検査を追加: `today` の気象庁用語が観測を超えていれば「注意」。試験で、26mm（強い雨）なのに「非常に激しい雨」と書いた誇張を検出できた。

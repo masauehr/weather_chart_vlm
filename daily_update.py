@@ -9,7 +9,9 @@ fetch_chart.py で今日の天気図・衛星・実況・予報を取得 → Cla
 出典: 気象庁ホームページ（天気図・衛星・アメダス・予報概況）
 """
 import json
+import os
 import shutil
+import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -307,12 +309,55 @@ def prune_and_index():
     (HISTORY_DIR / "index.json").write_text(json.dumps({"dates": dates}, ensure_ascii=False, indent=2))
 
 
+def notify_slack(text: str) -> bool:
+    """Slack DM へ通知する。Bluesky 自動投稿（automated-data-collector/bin/notify.py）と同じ仕組みで、
+    `openclaw message send` 経由で送る。宛先は環境変数 BSKY_NOTIFY_TO か ~/.config/bsky/slack_to。
+    通知の失敗で本処理のエラーを隠さない（例外は握りつぶして False を返す）。"""
+    to = os.environ.get("BSKY_NOTIFY_TO", "").strip()
+    to_file = Path.home() / ".config" / "bsky" / "slack_to"
+    if not to and to_file.exists():
+        to = to_file.read_text().strip()
+    if not to:
+        print("Slack通知先が未設定のため通知をスキップ", file=sys.stderr)
+        return False
+    exe = shutil.which("openclaw") or "/opt/homebrew/bin/openclaw"
+    try:
+        r = subprocess.run([exe, "message", "send", "--channel", "slack", "--target", to, "-m", text[:3500]],
+                           capture_output=True, text=True, timeout=90)
+        if r.returncode != 0:
+            print("Slack通知に失敗:", (r.stderr or r.stdout).strip()[:200], file=sys.stderr)
+        return r.returncode == 0
+    except Exception as e:
+        print("Slack通知で例外:", e, file=sys.stderr)
+        return False
+
+
+def is_credit_error(e: Exception) -> bool:
+    """Anthropic API のクレジット残高不足エラー（400 invalid_request_error）かを判定する。"""
+    return isinstance(e, anthropic.BadRequestError) and "credit balance is too low" in str(e)
+
+
 def main():
     jst_today = datetime.now(timezone.utc) + timedelta(hours=9)
     date_str = jst_today.strftime("%Y-%m-%d")
 
     root = fetch_chart.fetch_all()
-    out = classify(root)
+    try:
+        out = classify(root)
+    except Exception as e:
+        if is_credit_error(e):
+            # 1日2回（8:45・9:15）実行されるため、同日の通知は1回に絞る（.slack_notified は git 除外）
+            flag = HERE / ".slack_notified"
+            if not (flag.exists() and flag.read_text().strip() == date_str):
+                ok = notify_slack(
+                    "【天気図VLM】日次更新が失敗しました（%s）\n"
+                    "Anthropic API のクレジット残高が不足しています。"
+                    "https://console.anthropic.com/settings/billing でチャージ後、"
+                    "`bash daily_update_local.sh` を再実行してください。" % date_str
+                )
+                if ok:
+                    flag.write_text(date_str)
+        raise
     checks = guardrail_checks(out, root)
     ng = sum(1 for c in checks if c["verdict"] == "NG")
     print(f"pattern={out['pattern']} confidence={out['confidence']} NG={ng}/{len(checks)}")
