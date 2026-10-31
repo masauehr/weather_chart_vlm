@@ -43,6 +43,7 @@
 - 当日（JST）分が `webui/history/<日付>/data.json` にあればスキップ（リトライ・手動再実行の重複防止）。
 - コスト: Claude API 約 $0.02〜0.04/日。`ANTHROPIC_API_KEY` は `.env`。
 - ログ: `launchd.log`（git除外）。
+- 失敗通知: スクリプト失敗時は macOS 通知、API クレジット不足時は加えて Slack DM（2026-10-31〜。Bluesky自動投稿と同じ `openclaw` 経由）。
 - 手動実行: `bash daily_update_local.sh`。
 - 注意: Mac がスリープ中／電源オフだと実行されない（スリープ復帰後に launchd が実行する場合あり）。
 - 再登録: `launchctl bootout gui/$(id -u)/com.user.weather_chart_vlm` → `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.user.weather_chart_vlm.plist`
@@ -51,6 +52,7 @@
 - `.github/workflows/daily-update.yml` は `workflow_dispatch` のみ。`gh workflow run daily-update.yml` で実行（Secrets の `ANTHROPIC_API_KEY` が必要）。
 
 ## 変更履歴
+- 2026-10-31（復旧）: クレジット追加後に 10/31 分を手動再実行して復旧（pattern=日本海低気圧・NG 0/18）。10/27〜10/30 は欠損。
 - 2026-10-31（Slack通知）: Anthropic API のクレジット残高不足（10/27〜10/31 に日次更新が停止した原因）を Slack に通知。`daily_update.py` の `classify()` が 400「credit balance is too low」で失敗したとき、Slack DM（Bluesky自動投稿と同じ `openclaw message send`・宛先 `~/.config/bsky/slack_to`）へ投稿してからエラー終了する。同日2回の実行（8:45・9:15）で通知は1回（`.slack_notified` に日付を記録・git除外）。宛先未設定または送信失敗でも通知なしで従来どおり動く。他のエラー（通信切断など）は通知対象外（`daily_update_local.sh` の macOS 通知のみ）。
 - 2026-10-19（内部ラベル）: `claims.precip_now`・`wind_now` の内部ラベルを気象庁の用語に変更（独自の weak/moderate/strong・none/some/heavy を廃止）。風は気象庁の表の区切り（10／15／20／30m/s）、雨は10／20／30／50／80mmで、予報用語の無い区分は「10m/s未満」「10mm未満」「降水なし」とした。旧ラベルは雨の10mm未満〜30mm未満をひとまとめにしていた（気象庁の表と不一致）。
   - 値は VLM に答えさせず `validate.fill_claims()` がアメダス全国最大から決める（`effort=low` で細かい用語を選ばせると、26mmを「やや強い雨」、14.7m/sを「10m/s未満」と取り違えて NG になったため。下流の Bluesky 投稿は NG を重く扱う）。
@@ -90,6 +92,8 @@
   - 時刻設定（UTC換算）の誤りではなく GitHub 側の仕様（高負荷時の遅延・取りこぼし、新規リポジトリの低優先度）が原因。
 
 ## トラブルシュート
+- API クレジット不足: `launchd.log` に `BadRequestError ... credit balance is too low` が出る。2026-10-27〜10/31 はこれで日次更新が止まった（launchd は正常で、毎回 `classify()` で失敗。10/30 8:45 のみ別途、通信切断 `RemoteDisconnected`）。気づくのが遅れた（macOS 通知を見落とし）ため、同エラー時は Slack DM に通知する（上記 2026-10-31 の変更履歴）。対処: [Console の Plans & Billing](https://console.anthropic.com/settings/billing) でチャージ → `bash daily_update_local.sh` で当日分を再実行。**止まっていた日（10/27〜10/30）は当日の実況データを後から取得できないため埋められず、`webui/history` は 10/26 → 10/31 と飛ぶ**。クレジット不足以外のエラー（通信切断など）は Slack 通知の対象外。
+- Slack 通知の確認: `python -c "import daily_update as d; print(d.notify_slack('テスト'))"`（`True` で送信成功。Bluesky自動投稿と同じ宛先 `~/.config/bsky/slack_to`）。
 - 更新されない: `launchd.log` を確認 → `launchctl list | grep weather_chart_vlm` → `bash daily_update_local.sh` で手動実行。
 - push 失敗: 2026-10-25 に push が約31時間ハングして日次更新が止まったため、`daily_update_local.sh` は低速30秒で中断・最大3回再試行し、最終失敗時は macOS 通知を出す。git の認証状態、`git pull --rebase` の競合を確認。
 
