@@ -79,12 +79,12 @@ main {
 .chart-panel { align-self: start; position: sticky; top: 8px; }
 @media (max-width: 760px) { .chart-panel { position: static; } }
 .chart-caption { margin: 6px 0 10px; font-size: 13px; color: var(--text-soft); }
-.thumbs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 10px; }
+.thumbs { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 10px; }
 .thumbs button {
   border: 2px solid var(--border); background: #fff; border-radius: 6px; padding: 3px;
-  cursor: pointer; display: flex; flex-direction: column; gap: 3px; color: var(--text-soft); font-size: 11px;
+  cursor: pointer; display: flex; flex-direction: column; gap: 3px; color: var(--text-soft); font-size: 12px;
 }
-.thumbs button img { width: 100%; aspect-ratio: 1 / 1; object-fit: cover; border-radius: 3px; display: block; }
+.thumbs button img { width: 100%; aspect-ratio: 1 / 1; object-fit: contain; background: #222; border-radius: 3px; display: block; }
 .thumbs button span { line-height: 1.25; text-align: center; }
 .thumbs button.active { border-color: var(--blue); color: var(--blue); }
 .image-tabs button { font-size: 12px; padding: 4px 8px; }

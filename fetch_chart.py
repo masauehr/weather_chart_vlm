@@ -20,7 +20,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import requests
-from PIL import Image, ImageDraw, ImageEnhance
+from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 
 BASE = "https://www.jma.go.jp/bosai"
 UA = {"User-Agent": "weather-hackathon-spike (personal research)"}
@@ -168,11 +168,18 @@ def fetch_radar(out, target_utc, z=6, x0=52, y0=22, nx=6, ny=6):
     times = get(f"{base_url}/targetTimes_N1.json").json()
     t = min(times, key=lambda x: abs(int(x["validtime"]) - int(target_utc)))
     base, valid = t["basetime"], t["validtime"]
+    layer = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
     for yi in range(ny):
         for xi in range(nx):
             url = f"{base_url}/{base}/none/{valid}/surf/hrpns/{z}/{x0 + xi}/{y0 + yi}.png"
             tile = Image.open(io.BytesIO(get(url).content)).convert("RGBA")
-            canvas.alpha_composite(tile, (xi * 256, yi * 256))
+            layer.alpha_composite(tile, (xi * 256, yi * 256))
+    # 縮小表示でも見えるよう、降水域を太らせ（3px）、白い雲の上でも目立つよう黒い縁取り（7px）を付ける
+    alpha = layer.getchannel("A")
+    outline = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+    outline.putalpha(alpha.filter(ImageFilter.MaxFilter(7)).point(lambda v: 170 if v else 0))
+    canvas.alpha_composite(outline)
+    canvas.alpha_composite(layer.filter(ImageFilter.MaxFilter(3)))
     canvas = canvas.convert("RGB")
     draw_coastline(canvas, z, x0, y0)
     draw_grid(canvas, z, x0, y0)

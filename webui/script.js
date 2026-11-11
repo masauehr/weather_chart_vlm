@@ -8,7 +8,7 @@ const SAMPLE_OPTION = { value: "sample", label: "サンプル (2026-09-25・手�
 async function loadIndex() {
   const options = [];
   try {
-    const res = await fetch("history/index.json");
+    const res = await fetch("history/index.json", { cache: "no-cache" });
     if (res.ok) {
       const idx = await res.json();
       idx.dates.forEach((d) => options.push({ value: d, label: `${d}（自動更新）`, path: `history/${d}/data.json` }));
@@ -40,7 +40,7 @@ async function main() {
 }
 
 async function loadEntry(path) {
-  const res = await fetch(path);
+  const res = await fetch(path, { cache: "no-cache" });  // Pages のキャッシュ（約10分）で古い内容が出ないようにする
   DATA = await res.json();
   readerMode = "general";
   document.getElementById("btn-general").classList.add("active");
