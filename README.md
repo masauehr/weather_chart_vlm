@@ -62,7 +62,7 @@ Mac での手動実行は `bash daily_update_local.sh`、GitHub での手動実�
 | [daily_update.py](daily_update.py) | 上記を毎日1回通しで実行し、`webui/history/` に保存（Mac の launchd から実行） |
 | [coastline_ea.json](coastline_ea.json) | 東アジア域の海岸線データ（Natural Earth 1:50m、パブリックドメイン） |
 | [CHARTS.md](CHARTS.md) / [images/](images/) | 使った画像（気象庁）と、その読み取り結果・実況予報との突合の解説 |
-| [webui/](webui/) | デモUI（Vanilla JS）。日付選択で自動更新履歴を切替表示 |
+| [webui/](webui/) | デモUI（Vanilla JS）。日付選択で自動更新履歴を切替表示。大きな1枚＋小さな4枚（赤外＋レーダー／日本近海／24h・48h予想）を2行2列で表示 |
 
 実行:
 - 当日1事例: `python fetch_chart.py` → `python vlm_read.py data/<対象時刻UTC>` → `python validate.py data/<対象時刻UTC>/vlm_output_api.json data/<対象時刻UTC>`
