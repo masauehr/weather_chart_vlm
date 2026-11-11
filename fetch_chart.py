@@ -5,7 +5,8 @@
   surface_near.png   日本近海 地上天気図（着色）
   forecast_{near,asia}_{ft24,ft48}.png  予想天気図（24・48時間先）
   ir_japan.png       ひまわり赤外（B13）全球画像から日本周辺(z=4, 2x2タイル)を結合
-  ir_nansei.png      九州〜南西諸島の拡大赤外（z=5, 経緯度格子つき）
+  ir_nansei.png      九州〜南西諸島の拡大赤外（z=5, 経緯度格子つき。VLM入力専用・公開ページには出さない）
+  radar.png          全国レーダー降水強度（z=6, 6x6タイル。海岸線・格子つき。公開ページ表示用）
   amedas.json        主要8地点＋全国アメダスの地域別集計（降水あり地点数・最大降水/風速）
   overview.json      府県予報の概況テキスト
   meta.json          取得元URLと時刻
@@ -134,6 +135,45 @@ def fetch_ir_zoom(out, target_utc, z=5, x0=27, y0=12, nx=2, ny=2, scale=2):
         if len(pts) >= 2:
             draw.line(pts, fill=(255, 255, 0), width=1)
     draw_grid(canvas, z, x0, y0, scale=scale)
+    canvas.save(out)
+    return {"basetime": base, "validtime": valid}
+
+# レーダー画像の凡例（気象庁の降水強度の配色。mm/h）
+RADAR_LEGEND = [
+    ("1-5", (160, 210, 255)), ("5-10", (33, 140, 255)), ("10-20", (0, 65, 255)), ("20-30", (250, 245, 0)),
+    ("30-50", (255, 153, 0)), ("50-80", (255, 40, 0)), ("80-", (180, 0, 104)),
+]
+
+
+def fetch_radar(out, target_utc, z=6, x0=52, y0=22, nx=6, ny=6):
+    """全国の降水レーダー（気象庁ナウキャスト hrpns, 5分毎）を z=6 の 6x6 タイルで結合する（東経112.5〜146.25度・北緯21.9〜48.9度）。
+
+    タイルは透過PNGの降水域のみで背景が無いため、暗い背景に降水域を重ね、海岸線と緯経度格子を描く。
+    天気図の対象時刻に最も近い観測を使う（履歴は約3時間分）。公開ページの表示専用でVLMには渡さない。
+    注意: レーダータイルは z=5 だと全て空（降水があっても透明）。データがあるのは z=4・6 など（2026-11-11確認）。
+    """
+    base_url = f"{BASE}/jmatile/data/nowc"
+    times = get(f"{base_url}/targetTimes_N1.json").json()
+    t = min(times, key=lambda x: abs(int(x["validtime"]) - int(target_utc)))
+    base, valid = t["basetime"], t["validtime"]
+    canvas = Image.new("RGBA", (256 * nx, 256 * ny), (40, 44, 52, 255))
+    for yi in range(ny):
+        for xi in range(nx):
+            url = f"{base_url}/{base}/none/{valid}/surf/hrpns/{z}/{x0 + xi}/{y0 + yi}.png"
+            tile = Image.open(io.BytesIO(get(url).content)).convert("RGBA")
+            canvas.alpha_composite(tile, (xi * 256, yi * 256))
+    canvas = canvas.convert("RGB")
+    draw_coastline(canvas, z, x0, y0)
+    draw_grid(canvas, z, x0, y0)
+    # 凡例と観測時刻（JST）
+    draw = ImageDraw.Draw(canvas)
+    jst = datetime.strptime(valid, "%Y%m%d%H%M%S") + timedelta(hours=9)
+    draw.rectangle([0, canvas.height - 18, 330, canvas.height], fill=(0, 0, 0))
+    draw.text((4, canvas.height - 14), f"radar {jst:%m/%d %H:%M}JST mm/h", fill=(255, 255, 255))
+    for i, (label, color) in enumerate(RADAR_LEGEND):
+        x = 140 + i * 27
+        draw.rectangle([x, canvas.height - 14, x + 8, canvas.height - 5], fill=color)
+        draw.text((x + 10, canvas.height - 14), label.split("-")[0], fill=(255, 255, 255))
     canvas.save(out)
     return {"basetime": base, "validtime": valid}
 
@@ -279,6 +319,10 @@ def fetch_all() -> Path:
             }
     meta["ir"] = fetch_ir(out / "ir_japan.png", base_utc)
     meta["ir_zoom"] = fetch_ir_zoom(out / "ir_nansei.png", base_utc)
+    try:
+        meta["radar"] = fetch_radar(out / "radar.png", base_utc)
+    except Exception as e:  # noqa: BLE001 レーダーは表示専用のため、失敗しても解説生成は続行する
+        meta["radar"] = {"error": str(e)}
     stamp, amedas = fetch_amedas(base_utc)
     meta["amedas_time"] = stamp
     (out / "amedas.json").write_text(json.dumps(amedas, ensure_ascii=False, indent=2))

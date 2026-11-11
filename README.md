@@ -54,7 +54,7 @@ Mac での手動実行は `bash daily_update_local.sh`、GitHub での手動実�
 ## 構成
 | ファイル | 役割 |
 |---|---|
-| [fetch_chart.py](fetch_chart.py) | 地上天気図（アジア/日本近海）・ひまわり赤外(B13、Natural Earth海岸線オーバーレイつき)・アメダス（主要8地点＋全国約1300地点の地域別集計）・九州〜南西諸島の拡大赤外・府県予報概況（地方区分10にまとめて取得）を取得 |
+| [fetch_chart.py](fetch_chart.py) | 地上天気図（アジア/日本近海）・ひまわり赤外(B13、Natural Earth海岸線オーバーレイつき)・アメダス（主要8地点＋全国約1300地点の地域別集計）・九州〜南西諸島の拡大赤外（VLM入力専用）・全国レーダー画像（公開ページ表示用）・府県予報概況（地方区分10にまとめて取得）を取得 |
 | [vlm_read.py](vlm_read.py) | Claude API（Sonnet 5）へ画像＋実況・予報を渡し、構造化出力を得る。`.env` の `ANTHROPIC_API_KEY` を使用 |
 | [validate.py](validate.py) | ①ラベル許可リスト ②季節整合 ③確信度 ④数値引用 ⑤実況突合 ⑥予報突合（台風は公式台風情報があれば概況に無くてもOK）⑦前線通過域の突合（予想図で前線がかかる地方を解説が落としていないか・概況に天気の崩れがあるか）。`--selftest` で壊した出力の検出を確認。⑤の `claims` は気象庁の用語（降水なし／10mm未満／やや強い雨…猛烈な雨、風（平均風速）: 10m/s未満／やや強い風…猛烈な風。2026-10-19 に独自ラベルから変更、値はアメダスから機械的に決定）。⑧today の用語が観測を超えていないか。（風は平均風速で判断するルールは [CLAUDE.md](CLAUDE.md)） |
 | [fetch_hibiten.py](fetch_hibiten.py) | 気象庁「日々の天気図」（月次PDF、2002年8月〜）から指定日の天気図だけを機械的に切り出す。正解ラベル（見出し）付きの過去事例を作る |
@@ -75,6 +75,7 @@ Mac での手動実行は `bash daily_update_local.sh`、GitHub での手動実�
 |---|---|---|
 | 地上天気図 | `weather_map/data/list.json` → `weather_map/data/png/<ファイル名>` | 日本近海 3時間毎(実測は約2時間遅れで掲載)、アジア 6時間毎。PNG 約600px |
 | ひまわり赤外 | `himawari/data/satimg/targetTimes_fd.json` → `.../{base}/fd/{valid}/B13/TBB/{z}/{x}/{y}.jpg` | 10分毎、遅延は数分。`jp` 域は斜めに欠けた範囲で太平洋側が空白になるため `fd` の z=4 タイルを使う。九州〜南西諸島は z=5 の拡大画像（`ir_nansei.png`）も作る |
+| レーダー | `jmatile/data/nowc/targetTimes_N1.json` → `.../{base}/none/{valid}/surf/hrpns/{z}/{x}/{y}.png` | 5分毎・履歴約3時間。透過PNG。**z=5 は空で z=4・6 に実データ**。公開ページの表示用（VLMには渡さない） |
 | アメダス | `amedas/data/map/{YYYYMMDDHHMMSS(JST)}.json` | 10分毎。値は [値, 品質] 形式。全国約1300地点を `amedas/const/amedastable.json`（地点名・緯経度）と突き合わせて地域別に集計する |
 | 府県予報概況 | `forecast/data/overview_forecast/{office}.json` | 日3回程度 |
 | 日々の天気図（過去、月次PDF） | `https://www.data.jma.go.jp/yoho/data/hibiten/{年}/{年下2桁}{月2桁}.pdf` | 2002年8月〜。1ページ4x4グリッド、各セルに天気図＋気象庁予報官が書いた見出し・解説。標準版PDF |
