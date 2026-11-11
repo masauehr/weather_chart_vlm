@@ -6,7 +6,7 @@
   forecast_{near,asia}_{ft24,ft48}.png  予想天気図（24・48時間先）
   ir_japan.png       ひまわり赤外（B13）全球画像から日本周辺(z=4, 2x2タイル)を結合
   ir_nansei.png      九州〜南西諸島の拡大赤外（z=5, 経緯度格子つき。VLM入力専用・公開ページには出さない）
-  radar.png          全国レーダー降水強度（z=6, 6x6タイル。海岸線・格子つき。公開ページ表示用）
+  sat_radar.png      ひまわり赤外＋全国レーダーの重ね合わせ（1536px。海岸線・格子・凡例つき。公開ページ表示用）
   amedas.json        主要8地点＋全国アメダスの地域別集計（降水あり地点数・最大降水/風速）
   overview.json      府県予報の概況テキスト
   meta.json          取得元URLと時刻
@@ -20,7 +20,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import requests
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageEnhance
 
 BASE = "https://www.jma.go.jp/bosai"
 UA = {"User-Agent": "weather-hackathon-spike (personal research)"}
@@ -146,17 +146,28 @@ RADAR_LEGEND = [
 
 
 def fetch_radar(out, target_utc, z=6, x0=52, y0=22, nx=6, ny=6):
-    """全国の降水レーダー（気象庁ナウキャスト hrpns, 5分毎）を z=6 の 6x6 タイルで結合する（東経112.5〜146.25度・北緯21.9〜48.9度）。
+    """ひまわり赤外の上に全国の降水レーダーを重ねた画像を作る（東経112.5〜146.25度・北緯21.9〜48.9度、1536px）。
 
-    タイルは透過PNGの降水域のみで背景が無いため、暗い背景に降水域を重ね、海岸線と緯経度格子を描く。
-    天気図の対象時刻に最も近い観測を使う（履歴は約3時間分）。公開ページの表示専用でVLMには渡さない。
+    背景: 赤外B13を fd の z=5 3x3 タイルで取得し2倍拡大（赤外は z=6 が存在しない）。雲を見やすくするため少し暗くする。
+    降水: 気象庁ナウキャスト hrpns（5分毎）を z=6 の 6x6 タイルで重ねる。天気図の対象時刻に最も近い観測を使う。
     注意: レーダータイルは z=5 だと全て空（降水があっても透明）。データがあるのは z=4・6 など（2026-11-11確認）。
+    公開ページの表示専用でVLMには渡さない。
     """
+    # 背景の赤外（z=5 の 3x3 → 2倍）
+    ir_times = get(f"{BASE}/himawari/data/satimg/targetTimes_fd.json").json()
+    it = min(ir_times, key=lambda x: abs(int(x["validtime"]) - int(target_utc)))
+    bg = Image.new("RGB", (256 * 3, 256 * 3))
+    for yi in range(3):
+        for xi in range(3):
+            url = f"{BASE}/himawari/data/satimg/{it['basetime']}/fd/{it['validtime']}/B13/TBB/5/{x0 // 2 + xi}/{y0 // 2 + yi}.jpg"
+            bg.paste(Image.open(io.BytesIO(get(url).content)).convert("RGB"), (xi * 256, yi * 256))
+    bg = bg.resize((256 * nx, 256 * ny), Image.LANCZOS)
+    canvas = ImageEnhance.Brightness(bg).enhance(0.8).convert("RGBA")
+    # 降水（レーダー）
     base_url = f"{BASE}/jmatile/data/nowc"
     times = get(f"{base_url}/targetTimes_N1.json").json()
     t = min(times, key=lambda x: abs(int(x["validtime"]) - int(target_utc)))
     base, valid = t["basetime"], t["validtime"]
-    canvas = Image.new("RGBA", (256 * nx, 256 * ny), (40, 44, 52, 255))
     for yi in range(ny):
         for xi in range(nx):
             url = f"{base_url}/{base}/none/{valid}/surf/hrpns/{z}/{x0 + xi}/{y0 + yi}.png"
@@ -168,14 +179,15 @@ def fetch_radar(out, target_utc, z=6, x0=52, y0=22, nx=6, ny=6):
     # 凡例と観測時刻（JST）
     draw = ImageDraw.Draw(canvas)
     jst = datetime.strptime(valid, "%Y%m%d%H%M%S") + timedelta(hours=9)
-    draw.rectangle([0, canvas.height - 18, 330, canvas.height], fill=(0, 0, 0))
-    draw.text((4, canvas.height - 14), f"radar {jst:%m/%d %H:%M}JST mm/h", fill=(255, 255, 255))
+    jst_ir = datetime.strptime(it["validtime"], "%Y%m%d%H%M%S") + timedelta(hours=9)
+    draw.rectangle([0, canvas.height - 18, 470, canvas.height], fill=(0, 0, 0))
+    draw.text((4, canvas.height - 14), f"IR {jst_ir:%H:%M} + radar {jst:%H:%M} JST  mm/h", fill=(255, 255, 255))
     for i, (label, color) in enumerate(RADAR_LEGEND):
-        x = 140 + i * 27
+        x = 270 + i * 28
         draw.rectangle([x, canvas.height - 14, x + 8, canvas.height - 5], fill=color)
         draw.text((x + 10, canvas.height - 14), label.split("-")[0], fill=(255, 255, 255))
     canvas.save(out)
-    return {"basetime": base, "validtime": valid}
+    return {"basetime": base, "validtime": valid, "ir_validtime": it["validtime"]}
 
 
 def fetch_ir(out, target_utc):
@@ -320,7 +332,7 @@ def fetch_all() -> Path:
     meta["ir"] = fetch_ir(out / "ir_japan.png", base_utc)
     meta["ir_zoom"] = fetch_ir_zoom(out / "ir_nansei.png", base_utc)
     try:
-        meta["radar"] = fetch_radar(out / "radar.png", base_utc)
+        meta["radar"] = fetch_radar(out / "sat_radar.png", base_utc)
     except Exception as e:  # noqa: BLE001 レーダーは表示専用のため、失敗しても解説生成は続行する
         meta["radar"] = {"error": str(e)}
     stamp, amedas = fetch_amedas(base_utc)

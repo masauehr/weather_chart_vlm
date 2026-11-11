@@ -67,21 +67,51 @@ function setConfidenceBadge(conf) {
   else el.classList.add("low");
 }
 
+// 一度に見られるように、大きな1枚＋小さな4枚（衛星赤外＋レーダー／日本近海／24時間予想／48時間予想）で表示する。
+// 過去日のデータには sat_radar が無いので、赤外（ir）で代替する。残りの画像は下の小さなタブから切り替える。
+const THUMB_IDS = [["sat_radar", "ir"], ["near"], ["fc_near_ft24"], ["fc_near_ft48"]];
+
+function showImage(img) {
+  document.getElementById("chart-image").src = img.src;
+  document.getElementById("chart-caption").textContent = img.label;
+  document.querySelectorAll("#thumbs button, #image-tabs button").forEach((b) => {
+    b.classList.toggle("active", b.dataset.id === img.id);
+  });
+}
+
 function renderImageTabs() {
+  const thumbs = document.getElementById("thumbs");
   const tabs = document.getElementById("image-tabs");
+  thumbs.innerHTML = "";
   tabs.innerHTML = "";
-  DATA.images.forEach((img, i) => {
+  const used = new Set();
+  const main = [];
+  THUMB_IDS.forEach((cands) => {
+    const img = cands.map((id) => DATA.images.find((x) => x.id === id)).find(Boolean);
+    if (img) { main.push(img); used.add(img.id); }
+  });
+  main.forEach((img) => {
     const btn = document.createElement("button");
+    btn.dataset.id = img.id;
+    btn.title = img.label;
+    const pic = document.createElement("img");
+    pic.src = img.src;
+    pic.alt = img.label;
+    const cap = document.createElement("span");
+    cap.textContent = img.label;
+    btn.append(pic, cap);
+    btn.addEventListener("click", () => showImage(img));
+    thumbs.appendChild(btn);
+  });
+  // サムネイルに無い画像（アジア太平洋の図・広域赤外・アジア予想図など）は文字タブで切り替え
+  DATA.images.filter((img) => !used.has(img.id)).forEach((img) => {
+    const btn = document.createElement("button");
+    btn.dataset.id = img.id;
     btn.textContent = img.label;
-    if (i === 0) btn.classList.add("active");
-    btn.addEventListener("click", () => {
-      document.getElementById("chart-image").src = img.src;
-      tabs.querySelectorAll("button").forEach((b) => b.classList.remove("active"));
-      btn.classList.add("active");
-    });
+    btn.addEventListener("click", () => showImage(img));
     tabs.appendChild(btn);
   });
-  document.getElementById("chart-image").src = DATA.images[0].src;
+  showImage(main[0] || DATA.images[0]);
 }
 
 function setReaderMode(mode) {

@@ -257,11 +257,11 @@ def build_entry(date_str: str, out: dict, checks: list[dict], root: Path, dest: 
     shutil.copy(root / "surface_near.png", img_dir / "near.png")
     shutil.copy(root / "surface_asia.png", img_dir / "asia.png")
     shutil.copy(root / "ir_japan.png", img_dir / "ir.png")
-    # 九州〜南西諸島の拡大赤外はVLM入力専用（公開ページには出さない）。代わりにレーダーを表示する
+    # 九州〜南西諸島の拡大赤外はVLM入力専用（公開ページには出さない）。代わりに赤外＋レーダーの重ね合わせを表示する
     radar_images = []
-    if (root / "radar.png").exists():
-        shutil.copy(root / "radar.png", img_dir / "radar.png")
-        radar_images.append({"id": "radar", "label": "レーダー降水強度（全国）", "src": f"history/{date_str}/images/radar.png"})
+    if (root / "sat_radar.png").exists():
+        shutil.copy(root / "sat_radar.png", img_dir / "sat_radar.png")
+        radar_images.append({"id": "sat_radar", "label": "衛星赤外＋レーダー", "src": f"history/{date_str}/images/sat_radar.png"})
     meta = json.loads((root / "meta.json").read_text())
     forecast_images = []
     for key, label in FORECAST_LABELS:
@@ -279,10 +279,10 @@ def build_entry(date_str: str, out: dict, checks: list[dict], root: Path, dest: 
         "secondary_patterns": out.get("secondary_patterns", []),
         "confidence": out["confidence"],
         "images": [
+            *radar_images,
             {"id": "near", "label": "地上天気図（日本近海）", "src": f"history/{date_str}/images/near.png"},
             {"id": "asia", "label": "地上天気図（アジア太平洋）", "src": f"history/{date_str}/images/asia.png"},
             {"id": "ir", "label": "ひまわり赤外(B13)", "src": f"history/{date_str}/images/ir.png"},
-            *radar_images,
             *forecast_images,
         ],
         "general": {
