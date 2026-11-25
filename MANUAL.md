@@ -52,6 +52,36 @@
 ## GitHub Actions（手動実行用に残置）
 - `.github/workflows/daily-update.yml` は `workflow_dispatch` のみ。`gh workflow run daily-update.yml` で実行（Secrets の `ANTHROPIC_API_KEY` が必要）。
 
+## 検討: cron-job.org 起動への変更（2026-11-25 調査・現状は変更なし）
+Mac の launchd をやめ、cron-job.org から起動する案の実現可否を調べた。**結論: 可能。ただし移行するかは未判断で、現状は launchd のまま。**
+
+### 仕組み
+cron-job.org は HTTP リクエストを送るだけなので、スクリプトは直接動かせない。次の流れにする。
+1. cron-job.org が毎朝 8:45 JST に GitHub API `POST /repos/masauehr/weather_chart_vlm/actions/workflows/daily-update.yml/dispatches` を呼ぶ（`workflow_dispatch`）。
+2. GitHub Actions が `daily_update.py` を実行し、`webui/history` を commit・push する。
+- `schedule` と違い、呼ばれれば即実行される（10/1 の遅延・欠落は `schedule` の仕様が原因）。taiwan_radar_frames・nwp_chart_web と同じ方式。
+
+### 調査で確認できたこと
+- Actions での実行実績あり（2026-09-30 `schedule` 起動で成功、46秒）。
+- Secrets に `ANTHROPIC_API_KEY` が登録済み（2026-09-29）。
+- 取得先は気象庁の公開 API のみ。`data/` は git 除外の作業キャッシュで毎回再取得できる。
+- 日次処理は pdfplumber / pdf2image（poppler）を使わない。
+- VLM は Anthropic API を直接呼ぶ方式（Mac 版と同じ）。クレジット残高が必要な点も変わらない。
+
+### 移行する場合に必要な変更
+1. **Slack 通知**（`notify_slack`）: `openclaw` と `~/.config/bsky/slack_to` は Mac 専用。Actions ではスキップされる（エラーにはならない）。Slack Webhook 等で代替し、宛先は Secret で渡す。
+2. **失敗通知**: `osascript` は Mac 専用。Actions 失敗時の Slack 通知か cron-job.org の失敗通知で代替。
+3. **`daily-update.yml` の更新**: 10/1 の状態で古い。依存パッケージの確認、当日分（`webui/history/<日付>/data.json`）があればスキップする判定を追加。コミットメッセージの「Mac実行」表記も変わる。
+4. **GitHub の fine-grained PAT**（Actions: Read and write）と期限管理（Slack への期限通知を付ける）。
+5. 並行運用後に launchd を停止（二重実行・コミット衝突の防止）。
+
+### 未確認のリスク
+- ナウキャストレーダー履歴は約3時間分のみ。GitHub 側の起動が遅れると `sat_radar.png` の材料が欠ける可能性がある。
+- Actions から気象庁への接続は 9/30 以降に取得先が増えており（r8 系など）、実際に走らせるまで確定しない。
+
+### 進め方（案）
+1. `gh workflow run daily-update.yml` で手動実行して通るか確認 → 2. Actions 向けに通知・パスを修正 → 3. PAT 発行と cron-job.org 登録 → 4. 数日並行運用 → 5. launchd 停止。
+
 ## 変更履歴
 - 2026-11-11（公開ページの表示画像を刷新）: 拡大赤外を外し、赤外＋レーダーの重ね合わせと「大1枚＋小4枚」レイアウトにした。
   - **画像**: 公開ページに出していた「ひまわり赤外 九州〜南西諸島（拡大）」`ir_nansei.png` を表示から外した。取得とVLMへの入力は従来どおり（気圧の谷と雲域の照合用）で、`webui/history/` には保存しない。過去日の履歴には残る。
